@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointer } from "react";
-import { ImagePlus, Maximize, Minus, Plus } from "lucide-react";
+import { ImagePlus, Maximize, Minimize2, Maximize2, Minus, Plus } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
 import type { Point, SelectionMode } from "../types";
 import { canvas, context } from "../core/canvas";
 import { polygonMask } from "../tools/selection";
+import { selectionBounds, selectionHandles, selectionCursors, hitSelectionHandle, dragSelectionBounds, transformSelection, type SelectionBounds } from "../tools/selection-frame";
 import { traceIslands, hitIsland } from "../tools/uv";
 import { traceGuides } from "../tools/uv-guides";
 import { PaintStroke } from "../tools/paint";
-import { OptionsBar } from "./OptionsBar";
+import { TextureVisibility } from "../render/texture-visibility";
+import { LayersDock } from "./LayersDock";
 import {
   dragTransform,
   hitTransform,
@@ -19,7 +21,7 @@ import {
 } from "../tools/free-transform";
 
 type Gesture = {
-  kind: "pan" | "select" | "paint" | "transform";
+  kind: "pan" | "select" | "paint" | "transform" | "move-pending" | "selection-frame";
   start: Point;
   last: Point;
   points: Point[];
@@ -29,8 +31,13 @@ type Gesture = {
   stroke?: PaintStroke;
   pan?: Point;
   transformHit?: TransformHit;
+  selectionFrame?: { mask: HTMLCanvasElement; bounds: SelectionBounds; next: SelectionBounds };
+  selectOnClick?: boolean;
+  addIsland?: boolean;
+  clientStart: Point;
+  zoom: number;
 };
-export function TextureCanvas() {
+export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean; onToggleExpand: () => void }) {
   const e = useEditor(),
     doc = e.doc;
   const host = useRef<HTMLDivElement>(null),
@@ -39,6 +46,7 @@ export function TextureCanvas() {
   const [zoom, setZoom] = useState(0.5),
     [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [path, setPath] = useState<Point[]>([]);
+  const [selectionPreview, setSelectionPreview] = useState<SelectionBounds | null>(null);
   const [space, setSpace] = useState(false);
   const gesture = useRef<Gesture | null>(null);
   const brushCursor = useRef<HTMLDivElement>(null);
@@ -61,10 +69,13 @@ export function TextureCanvas() {
   };
   useEffect(updateBrushCursor, [e.tool, e.brushSize, zoom, space, e.pickingLayerIsland, e.imageImport, e.islandMenu, doc?.id]);
   const polygon = useRef<Point[]>([]);
+  const selectionTool = ["rect", "lasso", "polygon", "wand"].includes(e.tool);
+  const selectionBox = doc?.selection ? selectionBounds(doc.selection) : null;
   const selectionCache = useRef<{
     source: HTMLCanvasElement;
     outline: HTMLCanvasElement;
   } | null>(null);
+  const visibility = useRef(new TextureVisibility());
   const fit = () => {
     if (doc) {
       setZoom(
@@ -76,6 +87,7 @@ export function TextureCanvas() {
   useEffect(() => {
     const ob = new ResizeObserver((entries) => {
       const r = entries[0].contentRect;
+      if (!r.width || !r.height) return;
       setSize({ w: r.width, h: r.height });
     });
     if (host.current) ob.observe(host.current);
@@ -89,7 +101,9 @@ export function TextureCanvas() {
   useEffect(() => {
     polygon.current = [];
     setPath([]);
-  }, [e.tool]);
+    if (gesture.current?.kind === "selection-frame") gesture.current = null;
+    setSelectionPreview(null);
+  }, [e.tool, doc?.id, doc?.selection]);
   const origin = {
     x: (size.w - (doc?.width ?? 0) * zoom) / 2 + pan.x,
     y: (size.h - (doc?.height ?? 0) * zoom) / 2 + pan.y,
@@ -120,6 +134,10 @@ export function TextureCanvas() {
       if (ev.key === "Escape") {
         polygon.current = [];
         setPath([]);
+        if (gesture.current?.kind === "selection-frame" || gesture.current?.kind === "move-pending") {
+          gesture.current = null;
+          setSelectionPreview(null);
+        }
         if (gesture.current?.stroke) {
           gesture.current.stroke.cancel();
           gesture.current = null;
@@ -134,6 +152,7 @@ export function TextureCanvas() {
       if (gesture.current?.stroke) gesture.current.stroke.finish();
       if (gesture.current?.kind === "transform") e.flushTransform();
       gesture.current = null;
+      setSelectionPreview(null);
       setPath([]);
     };
     window.addEventListener("keydown", down);
@@ -170,8 +189,10 @@ export function TextureCanvas() {
       for (let x = 0; x < w; x += tile)
         if ((Math.round(x / tile) + Math.round(y / tile)) % 2 === 0)
           ctx.fillRect(x, y, Math.min(tile, w - x), Math.min(tile, h - y));
-    if (e.output) ctx.drawImage(e.output, 0, 0);
-    if (e.transform?.outside && e.layer?.visible) {
+    visibility.current.update(doc, e.hiddenFaces, e.visibleIslands);
+    const visibleTexture = visibility.current.render(e.output, e.layer?.visible ? e.transform?.outside : undefined, 0.4 * (e.layer?.opacity ?? 0));
+    if (visibleTexture ?? e.output) ctx.drawImage((visibleTexture ?? e.output)!, 0, 0);
+    if (!visibleTexture && e.transform?.outside && e.layer?.visible) {
       ctx.save();
       ctx.globalAlpha = 0.4 * e.layer.opacity;
       ctx.drawImage(e.transform.outside, 0, 0);
@@ -227,9 +248,31 @@ export function TextureCanvas() {
         context(out).putImageData(image, 0, 0);
         selectionCache.current = { source: doc.selection, outline: out };
       }
-      ctx.drawImage(selectionCache.current.outline, 0, 0);
+      if (selectionPreview && selectionBox) {
+        const b = selectionBox, p = selectionPreview;
+        ctx.drawImage(selectionCache.current.outline, b.x, b.y, b.width, b.height, p.x, p.y, p.width, p.height);
+      } else ctx.drawImage(selectionCache.current.outline, 0, 0);
     }
     ctx.restore();
+    if (selectionTool && selectionBox && !e.transform && !path.length) {
+      const b = selectionPreview ?? selectionBox;
+      ctx.strokeStyle = "#9ce8d6";
+      ctx.lineWidth = 1 / zoom;
+      ctx.setLineDash([3 / zoom, 3 / zoom]);
+      ctx.strokeRect(b.x, b.y, b.width, b.height);
+      ctx.setLineDash([]);
+      selectionHandles(b).forEach((p, i) => {
+        ctx.fillStyle = "#172d2b";
+        ctx.fillRect(p.x - 4 / zoom, p.y - 4 / zoom, 8 / zoom, 8 / zoom);
+        ctx.strokeRect(p.x - 4 / zoom, p.y - 4 / zoom, 8 / zoom, 8 / zoom);
+        if (i === 8) {
+          ctx.beginPath();
+          ctx.moveTo(p.x - 7 / zoom, p.y); ctx.lineTo(p.x + 7 / zoom, p.y);
+          ctx.moveTo(p.x, p.y - 7 / zoom); ctx.lineTo(p.x, p.y + 7 / zoom);
+          ctx.stroke();
+        }
+      });
+    }
     if (path.length) {
       ctx.beginPath();
       path.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
@@ -293,7 +336,7 @@ export function TextureCanvas() {
     ctx.restore();
     ctx.strokeStyle = "#ffffff1a";
     ctx.strokeRect(origin.x - 0.5, origin.y - 0.5, w * zoom + 1, h * zoom + 1);
-  }, [e.revision, size, zoom, pan, path]);
+  }, [e.revision, size, zoom, pan, path, selectionPreview]);
   function down(ev: ReactPointer<HTMLCanvasElement>) {
     if (ev.button === 2) return;
     if (!doc) return;
@@ -314,11 +357,29 @@ export function TextureCanvas() {
       handle: -1,
       original: [],
       mode,
+      clientStart: { x: ev.clientX, y: ev.clientY },
+      zoom,
     };
     if (space || ev.button === 1 || e.tool === "pan") {
       g.kind = "pan";
       g.start = { x: ev.clientX, y: ev.clientY };
       g.pan = pan;
+      gesture.current = g;
+      return;
+    }
+    if (selectionTool && doc.selection && selectionBox && !e.transform && !polygon.current.length) {
+      const handle = hitSelectionHandle(selectionBox, p, zoom);
+      if (handle >= 0) {
+        g.kind = "selection-frame";
+        g.handle = handle;
+        g.selectionFrame = { mask: doc.selection, bounds: selectionBox, next: selectionBox };
+        gesture.current = g;
+        return;
+      }
+    }
+    if (e.tool === "move" && !e.transform) {
+      g.kind = "move-pending";
+      g.addIsland = ev.shiftKey;
       gesture.current = g;
       return;
     }
@@ -336,11 +397,13 @@ export function TextureCanvas() {
         ev.ctrlKey || ev.metaKey,
       );
       g.handle = g.transformHit.handle;
+      g.selectOnClick = e.tool === "move" && g.transformHit.action === "move";
+      g.addIsland = ev.shiftKey;
       gesture.current = g;
       return;
     }
     if (e.tool === "island") {
-      e.selectIsland(hitIsland({...doc,islands:e.visibleIslands}, p), ev.shiftKey);
+      e.selectCanvasIsland(hitIsland({...doc,islands:e.visibleIslands}, p), ev.shiftKey);
       return;
     }
     if (e.tool === "wand") {
@@ -390,9 +453,17 @@ export function TextureCanvas() {
   }
   function move(ev: ReactPointer<HTMLCanvasElement>) {
     const g = gesture.current;
-    const p = point(ev);
+    // Tool options can reflow when a transform starts. Keep drag deltas in the
+    // initial canvas coordinate system so that reflow does not move the image.
+    const p = g ? {
+      x: g.start.x + (ev.clientX - g.clientStart.x) / g.zoom,
+      y: g.start.y + (ev.clientY - g.clientStart.y) / g.zoom,
+    } : point(ev);
     if (!g) {
-      if (e.transform) {
+      if (selectionTool && selectionBox && !e.transform && !polygon.current.length) {
+        const handle = hitSelectionHandle(selectionBox, p, zoom);
+        ev.currentTarget.style.cursor = handle < 0 ? "" : selectionCursors[handle];
+      } else if (e.transform) {
         const hit = hitTransform(
           e.transform.points,
           p,
@@ -432,7 +503,23 @@ export function TextureCanvas() {
       g.stroke!.draw(p);
       return;
     }
+    if (g.kind === "selection-frame") {
+      const frame = g.selectionFrame!;
+      frame.next = dragSelectionBounds(frame.bounds, g.handle, g.start, p);
+      setSelectionPreview(frame.next);
+      return;
+    }
+    if (g.kind === "move-pending") {
+      if (Math.hypot(p.x - g.start.x, p.y - g.start.y) * zoom < 4) return;
+      e.beginTransform("free");
+      if (!e.transform) return;
+      g.kind = "transform";
+      g.original = e.transform.points.map(p => ({ ...p }));
+      g.transformHit = hitTransform(g.original, g.start, zoom, true, ev.ctrlKey || ev.metaKey);
+    }
     if (g.kind === "transform") {
+      if (g.selectOnClick && Math.hypot(p.x - g.start.x, p.y - g.start.y) * zoom < 4) return;
+      g.selectOnClick = false;
       const next = dragTransform(
         g.original,
         g.start,
@@ -460,6 +547,17 @@ export function TextureCanvas() {
     const g = gesture.current;
     gesture.current = null;
     if (!g) return;
+    if (g.kind === "move-pending" || (g.kind === "transform" && g.selectOnClick)) {
+      if (doc) e.selectCanvasIsland(hitIsland({ ...doc, islands: e.visibleIslands }, g.start), g.addIsland);
+      return;
+    }
+    if (g.kind === "selection-frame") {
+      const frame = g.selectionFrame!;
+      if (doc?.selection === frame.mask && ["x", "y", "width", "height"].some(key => frame.bounds[key as keyof SelectionBounds] !== frame.next[key as keyof SelectionBounds]))
+        e.setSelection(transformSelection(frame.mask, frame.bounds, frame.next), "replace");
+      setSelectionPreview(null);
+      return;
+    }
     if (g.kind === "transform") e.flushTransform();
     if (g.kind === "paint") g.stroke!.finish();
     if (g.kind === "select" && doc)
@@ -468,7 +566,12 @@ export function TextureCanvas() {
   }
   return (
     <section className="texture-pane">
-      <OptionsBar />
+      <div className="pane-heading texture-view-toolbar">
+        <div className="spacer" />
+        <Button title={expanded ? "Restore split view" : "Expand texture editor"} aria-pressed={expanded} onClick={onToggleExpand}>
+          {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </Button>
+      </div>
       <div
         className={`canvas-host cursor-${space ? "pan" : e.pickingLayerIsland ? "eyedropper" : e.tool}`}
         ref={host}
@@ -481,6 +584,8 @@ export function TextureCanvas() {
               const bytes = new Uint8Array(await file.arrayBuffer());
               if (file.name.toLowerCase().endsWith(".glb"))
                 await e.importModel(bytes, file.name);
+              else if (file.name.toLowerCase().endsWith(".uvpaint"))
+                await e.importProject(bytes, file.name);
               else await e.requestImageImport(bytes, file.name);
             }
           });
@@ -491,6 +596,13 @@ export function TextureCanvas() {
           data-testid="texture-canvas"
           tabIndex={0}
           aria-label="Texture canvas"
+          onKeyDown={ev => {
+            if (gesture.current?.kind !== "selection-frame") return;
+            if (ev.key === "Escape" || ((ev.ctrlKey || ev.metaKey) && ["KeyZ", "KeyY"].includes(ev.code))) {
+              gesture.current = null; setSelectionPreview(null);
+              ev.preventDefault(); ev.stopPropagation();
+            }
+          }}
           onPointerDown={(ev) => {
             try {
               down(ev);
@@ -516,6 +628,7 @@ export function TextureCanvas() {
             gesture.current?.stroke?.cancel();
             if (gesture.current?.kind === "transform") e.flushTransform();
             gesture.current = null;
+            setSelectionPreview(null);
             setPath([]);
             cursorPoint.current = null;updateBrushCursor();
           }}
@@ -540,6 +653,7 @@ export function TextureCanvas() {
           onContextMenu={(ev) => {ev.preventDefault();e.openIslandMenu(ev.clientX,ev.clientY,doc ? hitIsland({...doc,islands:e.visibleIslands},point(ev)) : -1);}}
         />
         <div className="brush-footprint" ref={brushCursor} aria-hidden="true" data-testid="brush-footprint" />
+        <LayersDock />
         {!doc && (
           <div className="empty-canvas">
             <div className="empty-icon">
@@ -564,12 +678,6 @@ export function TextureCanvas() {
               Explore the sample project →
             </button>
             <small>Drop a GLB or an image anywhere here</small>
-          </div>
-        )}
-        {doc && (
-          <div className="canvas-label">
-            {doc.name}
-            <span>{doc.textureUsage?.toUpperCase() ?? "BASE COLOR"}</span>
           </div>
         )}
       <div className="canvas-zoom">

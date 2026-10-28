@@ -1,8 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, session, Menu } from "electron";
-import { readFile, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { readFile, writeFile, rename, unlink } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { freemem } from "node:os";
 let win: BrowserWindow;
+const projectFiles = new Map<string, string>();
 app.whenReady().then(() => {
   // The default Electron Edit menu routes Ctrl+Z to Chromium's text history.
   // The application has its own menu and document-level keyboard shortcuts.
@@ -38,14 +40,14 @@ app.whenReady().then(() => {
   };
   ipcMain.handle("file:open", async (event, kind) => {
     validate(event);
-    if (kind !== "model" && kind !== "image")
+    if (kind !== "model" && kind !== "image" && kind !== "project")
       throw new Error("Invalid file type");
     const result = await dialog.showOpenDialog(win, {
       properties: ["openFile"],
       filters:
         kind === "model"
           ? [{ name: "Binary glTF", extensions: ["glb"] }]
-          : [
+          : kind === "project" ? [{ name: "UV Paint project", extensions: ["uvpaint"] }] : [
               {
                 name: "Images",
                 extensions: ["png", "jpg", "jpeg", "webp", "bmp"],
@@ -54,9 +56,13 @@ app.whenReady().then(() => {
     });
     if (result.canceled) return null;
     const file = result.filePaths[0];
+    const bytes = new Uint8Array(await readFile(file));
+    const handle = kind === "project" ? randomUUID() : undefined;
+    if (handle) projectFiles.set(handle, file);
     return {
       name: basename(file),
-      bytes: new Uint8Array(await readFile(file)),
+      bytes,
+      ...(handle ? { handle } : {}),
     };
   });
   ipcMain.handle("file:save-png", async (event, bytes, name) => {
@@ -81,6 +87,35 @@ app.whenReady().then(() => {
     if (result.canceled || !result.filePath) return null;
     await writeFile(result.filePath, bytes);
     return result.filePath;
+  });
+  ipcMain.handle("file:save-project", async (event, bytes, name, existingHandle) => {
+    validate(event);
+    if (!(bytes instanceof Uint8Array) || bytes.length < 16 || Buffer.from(bytes.subarray(0, 8)).toString("ascii") !== "UVPAINT1")
+      throw new Error("Expected a UV Paint project.");
+    if (existingHandle !== undefined && (typeof existingHandle !== "string" || !projectFiles.has(existingHandle)))
+      throw new Error("Unknown project file. Use Save project as.");
+    let target = existingHandle ? projectFiles.get(existingHandle)! : undefined;
+    if (!target) {
+      const safe = typeof name === "string" ? basename(name).replace(/[<>:\"/\\|?*]/g, "_") : "Project.uvpaint";
+      const result = await dialog.showSaveDialog(win, {
+        defaultPath: safe.toLowerCase().endsWith(".uvpaint") ? safe : `${safe}.uvpaint`,
+        filters: [{ name: "UV Paint project", extensions: ["uvpaint"] }],
+      });
+      if (result.canceled || !result.filePath) return null;
+      target = result.filePath;
+    }
+    // Replace only after a complete write; a failed save preserves the previous project.
+    const temporary = join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`);
+    try {
+      await writeFile(temporary, bytes, { flag: "wx" });
+      await rename(temporary, target);
+    } catch (error) {
+      await unlink(temporary).catch(() => {});
+      throw error;
+    }
+    const handle = existingHandle ?? randomUUID();
+    projectFiles.set(handle, target);
+    return { name: basename(target), handle };
   });
   ipcMain.handle("system:memory", (event) => {
     validate(event);

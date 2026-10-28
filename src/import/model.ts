@@ -19,7 +19,9 @@ export async function loadGLB(
   });
   const loader = new GLTFLoader(manager);
   const gltf = await loader.parseAsync(bytes, "");
-  return prepareModel(gltf.scene, name, check);
+  const result = await prepareModel(gltf.scene, name, check);
+  result.model.source = { kind: "glb", bytes: new Uint8Array(bytes.slice(0)) };
+  return result;
 }
 export async function prepareModel(
   scene: THREE.Group,
@@ -241,7 +243,8 @@ export async function prepareModel(
       });
     }
   }
-  return { model: { name, scene, slots, parts } satisfies ModelAsset, docs };
+  const model: ModelAsset = { name, scene, slots, parts };
+  return { model, docs };
 }
 export function disposeModel(model: ModelAsset) {
   const textures = new Set<THREE.Texture>();

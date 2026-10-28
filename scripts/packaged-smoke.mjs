@@ -52,8 +52,24 @@ try {
   await page.getByRole("dialog", { name: "Import image", exact: true }).waitFor();
   assert.equal(await page.getByLabel("Import target layer", { exact: true }).inputValue(), "");
   assert.equal(await page.getByRole("toolbar", { name: "Import selection tools" }).locator("button[aria-pressed]").count(), 4);
+  await page.getByRole('button',{name:'Import selected area',exact:true}).click();
+  await page.getByTestId('import-island-preview').waitFor();
+  assert.equal(await page.getByRole('button',{name:'Import linked image',exact:true}).isDisabled(), true);
   await page.keyboard.press("Escape");
   await page.getByRole("dialog", { name: "Import image", exact: true }).waitFor({ state: "hidden" });
+  const project = path.resolve('test-results/packaged-project.uvpaint');
+  await app.evaluate(({ dialog }, file) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: file }); }, project);
+  await page.getByTitle('New empty layer', { exact: true }).click();
+  await page.getByTestId('texture-canvas').focus(); await page.keyboard.press('Control+s');
+  await page.waitForFunction(() => document.querySelector('.notice-toast')?.textContent?.includes('Project saved:'));
+  assert.equal((await readFile(project)).subarray(0, 8).toString(), 'UVPAINT1');
+  await page.getByTitle('New empty layer', { exact: true }).click();
+  assert.equal(await page.locator('.layer-row').count(), 3);
+  await app.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, project);
+  await page.getByTestId('texture-canvas').focus(); await page.keyboard.press('Control+Shift+o');
+  await page.waitForFunction(() => document.querySelector('.notice-toast')?.textContent?.includes('Project opened:'));
+  assert.equal(await page.locator('.layer-row').count(), 2);
+  assert.equal(await page.locator('.project-file-name').textContent(), 'packaged-project.uvpaint');
   await page.screenshot({
     path: "test-results/04-packaged.png",
   });
@@ -71,6 +87,7 @@ try {
           "Native export PNG signature and dimensions",
           "Native image selection opens the four-tool import dialog",
           "No native Edit menu intercepts document shortcuts",
+          "Native project save and open restore model and layer stack offline",
         ],
         errors,
       },

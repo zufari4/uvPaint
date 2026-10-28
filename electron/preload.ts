@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
 contextBridge.exposeInMainWorld("desktop", {
-  openFile: (kind: "model" | "image") => ipcRenderer.invoke("file:open", kind),
+  openFile: (kind: "model" | "image" | "project") => ipcRenderer.invoke("file:open", kind),
   savePNG: (bytes: Uint8Array, name: string) =>
     ipcRenderer.invoke("file:save-png", bytes, name),
+  saveProject: (bytes: Uint8Array, name: string, handle?: string) =>
+    ipcRenderer.invoke("file:save-project", bytes, name, handle),
   memory: () => ipcRenderer.invoke("system:memory"),
   windowState: () => ipcRenderer.invoke("window:state"),
   windowAction: (action: "minimize" | "maximize" | "close") =>

@@ -85,6 +85,8 @@ export function HelpDialog({ close }: { close: () => void }) {
             M rectangle · L lasso · Shift+L switches lasso · W wand
             <br />
             Shift adds · Alt subtracts · Enter closes polygon
+            <br />
+            Drag selection corners / sides to resize · Center handle moves the area
           </dd>
           <dt>Cut & extract</dt>
           <dd>
@@ -97,6 +99,8 @@ export function HelpDialog({ close }: { close: () => void }) {
           <dt>Transform</dt>
           <dd>
             Ctrl+T free transform · Corners scale · Outside frame rotates
+            <br />
+            V: click selects an island and linked layer · Drag moves the image
             <br />
             Shift unlocks proportions / snaps rotation · Alt from center
             <br />
@@ -131,11 +135,13 @@ export function HelpDialog({ close }: { close: () => void }) {
             Ctrl+Z undo · Ctrl+Shift+Z / Ctrl+Y redo
             <br />
             Ctrl+O open GLB · Ctrl+Shift+S export PNG
+            <br />
+            Ctrl+S save project · Ctrl+Alt+S save as · Ctrl+Shift+O open project
           </dd>
         </dl>
         <small>
-          Edits live in memory. Export each material before closing; project
-          files and GLB export are outside this version.
+          Save a .uvpaint project to retain the model, all textures, layers and
+          UV bindings. Undo history starts fresh when a project is opened.
         </small>
       </div>
     </div>

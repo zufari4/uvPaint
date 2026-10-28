@@ -5,10 +5,9 @@ import { useShortcuts } from "./shortcuts";
 import { Button } from "./Button";
 import { TextureCanvas } from "./TextureCanvas";
 import { Viewport } from "./Viewport";
-import { LayersPanel } from "./LayersPanel";
+import { OptionsBar } from "./OptionsBar";
 import { ToolRail } from "./ToolRail";
 import { SizeDialog, HelpDialog } from "./Dialogs";
-import { MaterialDialog } from "./MaterialDialog";
 import { Notice } from "./Notice";
 import { SettingsDialog } from "./SettingsDialog";
 import { WindowControls } from "./WindowControls";
@@ -26,20 +25,11 @@ export function App() {
     );
   }, [e.textScale]);
   const [dialog, setDialog] = useState<
-      "size" | "help" | "material" | "settings" | "about" | null
+      "size" | "help" | "settings" | "about" | null
     >(null),
     [split, setSplit] = useState(60);
+  const [expandedView, setExpandedView] = useState<"texture" | "preview" | null>(null);
   const workspace = useRef<HTMLDivElement>(null);
-  const textureWorkspace = useRef<HTMLDivElement>(null);
-  const [inspectorWidth, setInspectorWidth] = useState(300);
-  const inspectorDrag = useRef<{ x: number; width: number } | null>(null);
-  const resizeInspector = (width: number) =>
-    setInspectorWidth(
-      Math.max(
-        220,
-        Math.min(width, (textureWorkspace.current?.clientWidth ?? 800) - 240),
-      ),
-    );
   const dragging = useRef(false);
   useEffect(() => {
     const fail = (ev: ErrorEvent) => e.fail(ev.error ?? ev.message);
@@ -65,6 +55,7 @@ export function App() {
             uv<span>paint</span>
           </strong>
         </div>
+        {e.projectName && <span className="project-file-name" title={e.projectName}>{e.projectName}</span>}
         <div className="header-actions">
           <AppMenu onSelect={setDialog} />
           <WindowControls />
@@ -88,11 +79,6 @@ export function App() {
             ))
           )}
         </select>
-        <span className="material-channel">
-          <span className="channel-swatch" />{" "}
-          {e.doc?.textureUsage ?? "Base Color"}{" "}
-          <span className="muted">+ Alpha</span>
-        </span>
         {e.model && <select aria-label="UV set" title="Texture UV map"
           value={e.doc?.uvSet ?? "uv"} onChange={ev => e.selectUVSet(ev.target.value)}>
           {e.model.slots.find(s => s.id === e.activeId)?.uvSets.map(uv => <option key={uv} value={uv}>
@@ -115,63 +101,16 @@ export function App() {
               ))}
           </select>
         )}
-        <Button
-          title="Material textures and transparency"
-          disabled={!e.doc}
-          onClick={() => setDialog("material")}
-        >
-          Material settings
-        </Button>
         <div className="spacer" />
       </div>
-      <main className="workspace" ref={workspace}>
+      <main className="workspace">
+        <ToolRail />
+        <div className="workspace-content">
+          <OptionsBar />
+          <div className="workspace-views" data-expanded={expandedView ?? "none"} ref={workspace}>
         <div className="editor-workspace" style={{ width: `${split}%` }}>
-          <ToolRail />
-          <div className="texture-workspace" ref={textureWorkspace}>
-            <TextureCanvas />
-            <div
-              className="layers-splitter"
-              role="separator"
-              aria-label="Resize canvas and layers panels"
-              aria-orientation="vertical"
-              aria-valuenow={inspectorWidth}
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-                  event.preventDefault();
-                  resizeInspector(
-                    inspectorWidth + (event.key === "ArrowLeft" ? 16 : -16),
-                  );
-                }
-              }}
-              onPointerDown={(event) => {
-                inspectorDrag.current = {
-                  x: event.clientX,
-                  width: inspectorWidth,
-                };
-                event.currentTarget.setPointerCapture(event.pointerId);
-              }}
-              onPointerMove={(event) => {
-                if (inspectorDrag.current)
-                  resizeInspector(
-                    inspectorDrag.current.width +
-                      inspectorDrag.current.x -
-                      event.clientX,
-                  );
-              }}
-              onPointerUp={() => {
-                inspectorDrag.current = null;
-              }}
-              onPointerCancel={() => {
-                inspectorDrag.current = null;
-              }}
-            />
-            <div
-              className="inspector layers-sidebar"
-              style={{ width: inspectorWidth }}
-            >
-              <LayersPanel />
-            </div>
+          <div className="texture-workspace">
+            <TextureCanvas expanded={expandedView === "texture"} onToggleExpand={() => setExpandedView(value => value === "texture" ? null : "texture")} />
           </div>
         </div>
         <div
@@ -203,7 +142,9 @@ export function App() {
             dragging.current = false;
           }}
         />
-        <Viewport />
+        <Viewport expanded={expandedView === "preview"} onToggleExpand={() => setExpandedView(value => value === "preview" ? null : "preview")} />
+          </div>
+        </div>
       </main>
       <Notice />
       {e.imageImport && <ImageImportDialog key={e.imageImport.id} source={e.imageImport} />}
@@ -233,9 +174,6 @@ export function App() {
           close={() => setDialog(null)}
           openCanvas={() => setDialog("size")}
         />
-      )}
-      {dialog === "material" && e.doc && (
-        <MaterialDialog close={() => setDialog(null)} />
       )}
     </div>
   );

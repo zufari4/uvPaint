@@ -38,7 +38,7 @@ try {
   const apply=async()=>{await page.getByRole('button',{name:'Import selected area',exact:true}).click();await dialog.waitFor({state:'hidden'});};
   const confirm=()=>page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');e.confirmTransform();});
   const layers=await page.locator('.layers-sidebar').boundingBox(), texture=await page.locator('.texture-pane').boundingBox();
-  check(layers.x>texture.x+texture.width && Math.abs(layers.y-texture.y)<2,'Layers occupy the right side of the texture editing pane');
+  check(layers.x>texture.x && layers.y>texture.y && layers.width<=301 && layers.height<=301 && layers.x+layers.width<=texture.x+texture.width+1,'Compact Layers panel occupies the bottom-right corner inside the texture editor');
   check(await page.locator('.layer-footer').getByTitle('New empty layer',{exact:true}).count()===1&&
     await page.locator('.layer-footer').getByTitle('Import image layer',{exact:true}).count()===1,'New layer and image import buttons are in the bottom toolbar');
   const initial=await state();await open();

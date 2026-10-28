@@ -1,0 +1,78 @@
+import { _electron as electron } from 'playwright';
+import { createServer } from 'vite';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const server = await createServer(); await server.listen();
+const env = { ...process.env, UVPAINT_DEV_URL: 'http://127.0.0.1:5173' }; delete env.ELECTRON_RUN_AS_NODE;
+const app = await electron.launch({ args: ['.', `--user-data-dir=${process.cwd()}/test-results/docking-profile`], env });
+const check = (ok, label) => { assert.ok(ok, label); console.log('PASS', label); };
+try {
+  const page = await app.firstWindow(), errors = []; page.on('pageerror', err => errors.push(err.message));
+  await page.waitForSelector('.empty-canvas');
+  await page.evaluate(() => localStorage.removeItem('uvpaint.layersDock')); await page.reload(); await page.waitForSelector('.empty-canvas');
+  await page.evaluate(async () => { window.e = (await import('/src/core/editor.ts')).editor; await e.sample(); });
+  check(await page.locator('.texture-meta,.material-channel,.canvas-label').count() === 0 && await page.getByTitle('Material textures and transparency').count() === 0, 'Removed texture metadata, channel labels and Material settings stay absent');
+  const panel = page.locator('.layers-sidebar'), heading = page.getByLabel('Layers panel docking');
+  for (const corner of ['top-left', 'top-right', 'bottom-left', 'bottom-right']) {
+    const b = await page.locator('.canvas-host').boundingBox(), h = await heading.boundingBox();
+    await page.mouse.move(h.x + 70, h.y + h.height / 2); await page.mouse.down();
+    await page.mouse.move(corner.endsWith('left') ? b.x + 20 : b.x + b.width - 20, corner.startsWith('top') ? b.y + 20 : b.y + b.height - 20, { steps: 8 });
+    check(await page.locator('.layers-dock-preview').getAttribute('data-dock') === corner, `Dock drag previews ${corner}`);
+    await page.mouse.up(); const r = await panel.boundingBox();
+    check(await panel.getAttribute('data-dock') === corner && Math.abs((corner.endsWith('left') ? r.x-b.x : r.x+r.width-b.x-b.width)) < 1 && Math.abs((corner.startsWith('top') ? r.y-b.y : r.y+r.height-b.y-b.height)) < 1, `Layers dock flush to ${corner}`);
+    const z = await page.locator('.canvas-host > .canvas-zoom').boundingBox();
+    check(z.x < b.x + 20 && (corner !== 'bottom-left' || z.y + z.height <= r.y), 'Zoom stays left and clear of the docked panel');
+  }
+  check(await page.locator('.canvas-host > .canvas-zoom').evaluate(el => getComputedStyle(el).backgroundColor) === 'rgba(0, 0, 0, 0)', 'Zoom has no background');
+  await heading.focus(); await page.keyboard.press('ArrowUp'); await page.reload(); await page.waitForSelector('.empty-canvas');
+  check(await panel.getAttribute('data-dock') === 'top-right', 'Dock position persists after reload and supports keyboard movement');
+  await heading.focus(); await page.keyboard.press('ArrowDown');
+  await page.evaluate(async () => { window.e = (await import('/src/core/editor.ts')).editor; await e.sample(); window.sourcePixels = e.layer.canvas.toDataURL(); window.previewCanvas = document.querySelector('[data-testid=preview-canvas]'); });
+  const splitWidth = (await page.locator('.editor-workspace').boundingBox()).width;
+  for (const view of ['texture editor', '3D view']) {
+    await page.getByTitle(`Expand ${view}`, { exact: true }).click();
+    const main = await page.locator('.workspace-views').boundingBox(), active = await page.locator(view === '3D view' ? '.preview-pane' : '.editor-workspace').boundingBox();
+    const options = await page.locator('.options-bar').boundingBox();
+    check(Math.abs(active.width-main.width)<1 && active.y>=options.y+options.height && await page.locator('.tool-rail').isVisible() && await page.locator('.app-header').isVisible(), `${view} expands only the work area, preserving tools, options and title`);
+    await page.getByTitle('Restore split view', { exact: true }).click();
+    check(Math.abs((await page.locator('.editor-workspace').boundingBox()).width-splitWidth)<1, 'Restore preserves the original split');
+  }
+  check(await page.evaluate(() => document.querySelector('[data-testid=preview-canvas]') === window.previewCanvas && e.layer.canvas.toDataURL() === window.sourcePixels), 'Expanding views preserves the renderer and document pixels');
+  await page.evaluate(() => { e.color='#123456';e.backgroundColor='#abcdef';e.emit(); });
+  await page.getByTestId('texture-canvas').focus(); await page.keyboard.press('KeyX');
+  check(await page.getByLabel('Primary color',{exact:true}).inputValue()==='#abcdef' && await page.getByLabel('Secondary color',{exact:true}).inputValue()==='#123456', 'X swaps primary and secondary swatches below the tools');
+  await page.getByLabel('Secondary color',{exact:true}).focus(); await page.keyboard.press('KeyX');
+  check(await page.getByLabel('Primary color',{exact:true}).inputValue()==='#123456', 'Color swap also works with focus on a swatch');
+  const viewport = page.getByTestId('preview-canvas'); await viewport.hover(); await page.keyboard.press('Numpad1'); await viewport.hover();
+  await page.waitForFunction(() => e.model.parts.some(p=>p.children.some(c=>c.userData.uvPaintHover && c.visible)));
+  check(await page.evaluate(() => e.doc.selectedIslands.length===0 && e.history.undoStack.length===0), 'Hover highlights islands without selecting or editing them');
+  await page.mouse.move(10,10);
+  await page.waitForFunction(() => e.model.parts.every(p=>p.children.every(c=>!c.userData.uvPaintHover || !c.visible)));
+  await page.evaluate(() => { e.selectIsland(4); e.setIslandVisibility('except'); });
+  await page.waitForFunction(() => e.visibleIslands.every(i=>i.id!==4));
+  check(await page.evaluate(() => e.visibleIslands.every(i=>i.id!==4)), 'Hidden island triangles are excluded from UV outlines');
+  await page.evaluate(() => { e.setIslandVisibility('all'); e.selectIsland(-1); });
+  const png = await page.evaluate(async () => { const { canvas, context, toPNG } = await import('/src/core/canvas.ts'); const c=canvas(64,64);context(c).fillStyle='#ee0044';context(c).fillRect(0,0,64,64);return [...new Uint8Array(await (await toPNG(c)).arrayBuffer())]; });
+  await mkdir('test-results',{recursive:true}); const file=path.resolve('test-results/picker-source.png'); await writeFile(file,new Uint8Array(png));
+  await app.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},file);
+  const open = async () => { await page.getByTitle('Import image layer',{exact:true}).click(); await page.getByRole('dialog',{name:'Import image'}).waitFor(); await page.getByRole('button',{name:'Import selected area',exact:true}).click(); await page.getByTestId('import-island-preview').waitFor(); };
+  await open(); check(await page.getByRole('button',{name:'Import linked image',exact:true}).isDisabled(), 'Image area confirmation opens a 3D island picker before importing');
+  const pick = page.getByTestId('import-island-preview'); await pick.hover(); await page.keyboard.press('Numpad1'); await pick.click();
+  await page.getByRole('button',{name:'Import linked image',exact:true}).waitFor({state:'visible'});
+  check(await page.getByRole('button',{name:'Import linked image',exact:true}).isEnabled(), 'Clicking a model face chooses its exact UV island');
+  check(await page.evaluate(() => e.doc.layers.length===1 && e.doc.selectedIslands.length===0 && e.model.scene.children.length>0), 'Picker changes neither the main model nor layers before confirmation');
+  await page.screenshot({path:'test-results/import-island-picker.png'});
+  await page.getByRole('button',{name:'Import linked image',exact:true}).click(); await page.getByRole('dialog',{name:'Import image'}).waitFor({state:'hidden'});
+  check(await page.evaluate(() => e.doc.layers.length===2 && e.layer.uvBinding?.island.id===4 && e.transform?.source.width===64 && e.transform.clip===e.layer.uvMask), 'Imported image is linked to the picked island and starts a masked placement');
+  await page.keyboard.press('Enter'); await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
+  check(await page.evaluate(() => e.doc.layers.length===1), 'Undo removes both image import and its UV binding');
+  await open(); await page.keyboard.press('Escape'); await page.getByRole('dialog',{name:'Import image'}).waitFor({state:'hidden'});
+  check(await page.evaluate(() => e.doc.layers.length===1 && !e.transform), 'Canceling the 3D import step leaves the layer stack intact');
+  await open(); await pick.hover(); await page.keyboard.press('Numpad7'); await pick.click();
+  await page.getByRole('button',{name:'Import linked image',exact:true}).click(); await page.getByRole('dialog',{name:'Import image'}).waitFor({state:'hidden'});
+  check(await page.evaluate(() => e.activeId===e.model.slots[1].id && e.layer.uvBinding?.island.id===2), 'Picking another material creates the bound image layer in that material');
+  await page.keyboard.press('Enter');
+  await page.screenshot({path:'test-results/docked-workspace.png'});
+  assert.deepEqual(errors,[]);
+} finally { await app.close(); await server.close(); }

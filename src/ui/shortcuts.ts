@@ -6,6 +6,9 @@ export function useShortcuts() {
   useEffect(() => {
     const handler = (ev: KeyboardEvent) => {
       const target = ev.target as HTMLElement;
+      if (!ev.defaultPrevented && !document.querySelector(".modal-backdrop") && (ev.ctrlKey || ev.metaKey) && ev.code === "KeyS" && !ev.shiftKey) {
+        ev.preventDefault();target.blur();void e.run(() => e.saveProject(ev.altKey));return;
+      }
       const historyKey = (ev.ctrlKey || ev.metaKey) && ["KeyZ", "KeyY"].includes(ev.code);
       const textInput = target.closest('textarea,[contenteditable=true],input:not([type=checkbox]):not([type=range]):not([type=color]):not([type=button])');
       if (ev.key === "Escape" && e.pickingLayerIsland) {
@@ -53,7 +56,7 @@ export function useShortcuts() {
           i: () => {
             if (ev.shiftKey) e.invert();
           },
-          o: () => void e.run(() => e.openModel()),
+          o: () => void e.run(() => ev.shiftKey ? e.openProject() : e.openModel()),
           s: () => {
             if (ev.shiftKey) void e.run(() => e.export());
           },

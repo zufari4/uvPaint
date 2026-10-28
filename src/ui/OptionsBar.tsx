@@ -314,12 +314,6 @@ export function OptionsBar() {
           </Button>
         </>
       )}
-      <div className="texture-meta mini-actions">
-        <span>
-          {e.doc ? `${e.doc.width} × ${e.doc.height}` : "RGBA canvas"}
-        </span>
-        <span className="tag">sRGB</span>
-      </div>
     </div>
   );
 }

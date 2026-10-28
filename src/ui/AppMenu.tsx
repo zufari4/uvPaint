@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Menu, Settings, HelpCircle, Info, FolderOpen, Download } from "lucide-react";
+import { Menu, Settings, HelpCircle, Info, FolderOpen, Download, Save, SaveAll } from "lucide-react";
 import { useEditor } from "./hooks";
 export function AppMenu({
   onSelect,
@@ -70,9 +70,21 @@ export function AppMenu({
           role="menu"
           aria-label="Application menu"
         >
+          <button role="menuitem" title="Open project (Ctrl+Shift+O)" disabled={e.busy}
+            onClick={() => { setOpen(false); trigger.current?.focus(); void e.run(() => e.openProject()); }}>
+            <FolderOpen size={18} /> Open project
+          </button>
           <button role="menuitem" title="Open GLB (Ctrl+O)" disabled={e.busy}
             onClick={() => { setOpen(false); trigger.current?.focus(); void e.run(() => e.openModel()); }}>
             <FolderOpen size={18} /> Open GLB
+          </button>
+          <button role="menuitem" title="Save project (Ctrl+S)" disabled={!e.doc || e.busy}
+            onClick={() => { setOpen(false); trigger.current?.focus(); void e.run(() => e.saveProject()); }}>
+            <Save size={18} /> Save project
+          </button>
+          <button role="menuitem" title="Save project as (Ctrl+Alt+S)" disabled={!e.doc || e.busy}
+            onClick={() => { setOpen(false); trigger.current?.focus(); void e.run(() => e.saveProject(true)); }}>
+            <SaveAll size={18} /> Save project as
           </button>
           <button role="menuitem" title="Export PNG (Ctrl+Shift+S)" disabled={!e.doc || e.busy}
             onClick={() => { setOpen(false); trigger.current?.focus(); void e.run(() => e.export()); }}>

@@ -21,6 +21,9 @@
     "test:import": "node scripts/regression-import.mjs",
     "test:undo": "node scripts/regression-undo.mjs",
     "test:fill": "node scripts/regression-fill.mjs",
+    "test:project": "node scripts/regression-project.mjs",
+    "test:selection": "node scripts/regression-selection.mjs",
+    "test:docking-import": "node scripts/regression-docking-import.mjs",
     "test:packaged": "node scripts/packaged-smoke.mjs",
     "dist": "npm run build && electron-builder --win --x64 --dir"
   },

@@ -44,6 +44,17 @@ export function ToolRail() {
           </Button>
         </div>
       ))}
+      <div className="tool-colors" role="group" aria-label="Primary and secondary colors"
+        onKeyDown={ev => {
+          if (ev.code === "KeyX" && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+            ev.preventDefault(); ev.stopPropagation(); [e.color, e.backgroundColor] = [e.backgroundColor, e.color]; e.emit();
+          }
+        }}>
+        <input className="secondary-color" type="color" aria-label="Secondary color" title="Secondary color · X swaps colors"
+          value={e.backgroundColor} onChange={ev => { e.backgroundColor = ev.target.value; e.emit(); }} />
+        <input className="primary-color" type="color" aria-label="Primary color" title="Primary color · X swaps colors"
+          value={e.color} onChange={ev => { e.color = ev.target.value; e.emit(); }} />
+      </div>
     </aside>
   );
 }

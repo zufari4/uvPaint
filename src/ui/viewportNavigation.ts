@@ -21,6 +21,7 @@ export class ViewportNavigation {
   constructor(
     private element: HTMLCanvasElement,
     private frame: () => void,
+    private allowInModal = false,
   ) {
     this.camera.position.set(4, 2, 5);
     this.orbit = new OrbitControls(this.camera, element);
@@ -126,7 +127,7 @@ export class ViewportNavigation {
       (event.target as HTMLElement).closest(
         "input,textarea,select,[contenteditable=true]",
       ) ||
-      document.querySelector(".modal-backdrop") ||
+      (!this.allowInModal && document.querySelector(".modal-backdrop")) ||
       event.altKey ||
       event.metaKey
     )

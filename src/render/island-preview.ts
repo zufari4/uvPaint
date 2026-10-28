@@ -1,10 +1,12 @@
 import * as THREE from "three";
 import { sourceGeometry } from "./mesh-source";
 import { faceKey } from "../tools/uv-guides";
+const emptyHover = new Set<string>();
 export class IslandPreview {
-  private entries: {part:THREE.Mesh; source:THREE.BufferGeometry; display:THREE.BufferGeometry; overlay:THREE.Mesh; faces:number[]; edge:THREE.LineSegments}[]=[];
+  private entries: {part:THREE.Mesh; source:THREE.BufferGeometry; display:THREE.BufferGeometry; overlay:THREE.Mesh; hover:THREE.Mesh; faces:number[]; edge:THREE.LineSegments}[]=[];
   private hidden:Set<string>|null=null;
   private selected:Set<string>|null=null;
+  private hovered:Set<string>|null=null;
   rebuilds=0;
   constructor(parts:THREE.Mesh[]) {
     for(const part of parts){
@@ -13,17 +15,20 @@ export class IslandPreview {
       const overlay=new THREE.Mesh(source.clone(),new THREE.MeshBasicMaterial({color:0x65e6bf,transparent:true,opacity:.35,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1,side:THREE.DoubleSide}));
       overlay.geometry.clearGroups();overlay.geometry.setIndex([]);overlay.visible=false;overlay.raycast=()=>{};
       overlay.userData.uvPaintSelection=true;
+      const hover = new THREE.Mesh(source.clone(), new THREE.MeshBasicMaterial({color:0xffd58a,transparent:true,opacity:.32,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2,side:THREE.DoubleSide}));
+      hover.geometry.clearGroups();hover.geometry.setIndex([]);hover.visible=false;hover.raycast=()=>{};hover.userData.uvPaintHover=true;
       const edge=new THREE.LineSegments(new THREE.EdgesGeometry(display,25),new THREE.LineBasicMaterial({color:0x9fd5ca,transparent:true,opacity:.5,depthWrite:false}));
       edge.raycast=()=>{};
-      part.add(overlay,edge);
-      this.entries.push({part,source,display,overlay,faces:[],edge});
+      part.add(overlay,hover,edge);
+      this.entries.push({part,source,display,overlay,hover,faces:[],edge});
     }
   }
-  sync(hidden:Set<string>,selected:Set<string>,edgesVisible:boolean) {
+  sync(hidden:Set<string>,selected:Set<string>,edgesVisible:boolean, hovered=emptyHover) {
     const visibilityChanged=this.hidden!==hidden, selectionChanged=this.selected!==selected;
+    const hoverChanged=this.hovered!==hovered;
     for(const entry of this.entries){
       entry.edge.visible=edgesVisible;
-      if(!visibilityChanged&&!selectionChanged)continue;
+      if(!visibilityChanged&&!selectionChanged&&!hoverChanged)continue;
       const {source,display,overlay,part}=entry;
       const count=source.index?.count ?? source.getAttribute("position").count;
       const index=(i:number)=>source.index?.getX(i) ?? i;
@@ -43,15 +48,22 @@ export class IslandPreview {
         entry.edge.geometry.dispose();entry.edge.geometry=new THREE.EdgesGeometry(display,25);
         this.rebuilds++;
       }
-      for(const face of entry.faces) if(selected.has(faceKey({meshId:part.uuid,triangle:face})))
-        overlayIndices.push(index(face*3),index(face*3+1),index(face*3+2));
-      overlay.geometry.setIndex(overlayIndices);overlay.visible=overlayIndices.length>0;
+      if (visibilityChanged || selectionChanged) {
+        for(const face of entry.faces) if(selected.has(faceKey({meshId:part.uuid,triangle:face})))
+          overlayIndices.push(index(face*3),index(face*3+1),index(face*3+2));
+        overlay.geometry.setIndex(overlayIndices);overlay.visible=overlayIndices.length>0;
+      }
+      if (visibilityChanged || hoverChanged) {
+        const indices:number[]=[];
+        for(const face of entry.faces) if(hovered.has(faceKey({meshId:part.uuid,triangle:face}))) indices.push(index(face*3),index(face*3+1),index(face*3+2));
+        entry.hover.geometry.setIndex(indices);entry.hover.visible=indices.length>0;
+      }
     }
-    this.hidden=hidden;this.selected=selected;
+    this.hidden=hidden;this.selected=selected;this.hovered=hovered;
   }
   originalFace(part:THREE.Mesh,index:number){ return this.entries.find(e=>e.part===part)?.faces[index]; }
   dispose(){for(const e of this.entries){
-    e.part.geometry=e.source;e.part.remove(e.overlay,e.edge);e.display.dispose();e.overlay.geometry.dispose();
+    e.part.geometry=e.source;e.part.remove(e.overlay,e.hover,e.edge);e.display.dispose();e.overlay.geometry.dispose();e.hover.geometry.dispose();(e.hover.material as THREE.Material).dispose();
     (e.overlay.material as THREE.Material).dispose();e.edge.geometry.dispose();(e.edge.material as THREE.Material).dispose();
   }}
 }

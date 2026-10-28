@@ -133,26 +133,13 @@ try {
     }),
     "Delete is undoable",
   );
-  const separator = page.getByRole("separator", {
-      name: "Resize canvas and layers panels",
-    }),
-    s = await separator.boundingBox(),
-    before = await page
-      .locator(".inspector")
-      .evaluate((el) => el.getBoundingClientRect().width);
-  await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(s.x + s.width / 2 + 60, s.y + s.height / 2, {
-    steps: 5,
-  });
-  await page.mouse.up();
-  ok(
-    (await page
-      .locator(".inspector")
-      .evaluate((el) => el.getBoundingClientRect().width)) <
-      before - 40,
-    "Vertical divider resizes canvas and right-side layers panel",
-  );
+  ok(await page.getByRole("separator", {name: "Resize canvas and layers panels"}).count() === 0,
+    "Layers have no resize divider");
+  const layers = await page.locator('.layers-sidebar').boundingBox(), texture = await page.locator('.texture-pane').boundingBox();
+  ok(layers.width <= 301 && layers.height <= 301 && layers.y > texture.y &&
+    Math.abs(texture.x + texture.width - layers.x - layers.width) < 2 &&
+    Math.abs(texture.y + texture.height - layers.y - layers.height) < 2,
+    "Compact Layers panel stays in the bottom-right corner of the texture editor");
   await page.getByTitle("Maximize window", { exact: true }).click();
   await page.getByTitle("Restore window", { exact: true }).waitFor();
   ok(

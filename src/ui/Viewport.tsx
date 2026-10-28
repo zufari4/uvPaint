@@ -2,13 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { ViewportNavigation } from "./viewportNavigation";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { Box, Maximize } from "lucide-react";
+import { Box, Maximize, Maximize2, Minimize2 } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
 import { ModelPartsMenu } from "./ModelPartsMenu";
 import { ViewCube } from "./ViewCube";
 import { IslandPreview } from "../render/island-preview";
-export function Viewport() {
+import { islandForFace } from "../tools/uv";
+import { faceKey } from "../tools/uv-guides";
+export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onToggleExpand: () => void }) {
   const [navigationState,setNavigationState]=useState<ViewportNavigation|null>(null);
   const e = useEditor(),
     host = useRef<HTMLDivElement>(null),
@@ -105,11 +107,15 @@ export function Viewport() {
     fit();
     const resize = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
+      if (!width || !height) return;
       renderer.setSize(width, height);
       navigation.resize(width, height);
     });
     resize.observe(container);
     let frame = 0;
+    const noHover = new Set<string>();
+    let hoverFaces = noHover, hoverIsland: object | undefined;
+    const clearHover = () => { hoverFaces = noHover; hoverIsland = undefined; };
     const animate = () => {
       frame = requestAnimationFrame(animate);
       if (lastMode !== e.previewMode) {
@@ -133,7 +139,8 @@ export function Viewport() {
               : swap(part.material);
           }
       }
-      islands.sync(e.hiddenFaces,e.selectedFaces,e.previewEdges);
+      if (e.imageImport) clearHover();
+      islands.sync(e.hiddenFaces,e.selectedFaces,e.previewEdges,hoverFaces);
       navigation.orbit.update();
       renderer.render(scene, navigation.camera);
     };
@@ -163,6 +170,18 @@ export function Viewport() {
       const islandId=hitUVIsland(event, !e.pickingLayerIsland);
       e.openIslandMenu(event.clientX,event.clientY,islandId);
     };
+    const hover = (event:PointerEvent) => {
+      if (!model || event.buttons || e.imageImport) { clearHover(); return; }
+      const r = renderer.domElement.getBoundingClientRect(), ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2((event.clientX-r.left)/r.width*2-1,1-(event.clientY-r.top)/r.height*2),navigation.camera);
+      const hit = ray.intersectObjects(model.parts.filter(p=>p.visible),false)[0];
+      if (!hit || hit.faceIndex == null) { clearHover(); return; }
+      const part = hit.object as THREE.Mesh, face = islands.originalFace(part,hit.faceIndex);
+      const mat = Array.isArray(part.material) ? part.material[hit.face?.materialIndex ?? 0] : part.material;
+      const doc = e.docs.get(mat.userData.slotId);
+      const island = doc && face !== undefined ? islandForFace(doc.islands,part.uuid,face) : undefined;
+      if (island !== hoverIsland) { hoverIsland=island; hoverFaces=island ? new Set(island.faces?.map(faceKey)) : noHover; }
+    };
     let clickStart: { x: number; y: number; pointerId: number } | null = null;
     const pickIsland=(event:PointerEvent)=>{
       clickStart = null;
@@ -183,10 +202,14 @@ export function Viewport() {
     renderer.domElement.addEventListener("pointerup",selectIsland);
     renderer.domElement.addEventListener("pointercancel",cancelClick);
     renderer.domElement.addEventListener("contextmenu",contextMenu);
+    renderer.domElement.addEventListener("pointermove",hover);
+    renderer.domElement.addEventListener("pointerleave",clearHover);
     return () => {
       cancelAnimationFrame(frame);
       resize.disconnect();
       navigation.dispose();
+      renderer.domElement.removeEventListener("pointermove",hover);
+      renderer.domElement.removeEventListener("pointerleave",clearHover);
       renderer.domElement.removeEventListener("contextmenu",contextMenu);
       renderer.domElement.removeEventListener("pointerdown",pickIsland,true);
       renderer.domElement.removeEventListener("pointerup",selectIsland);
@@ -233,6 +256,9 @@ export function Viewport() {
           </label>
           <Button title="Frame model" onClick={() => fitRef.current()}>
             <Maximize size={14} />
+          </Button>
+          <Button title={expanded ? "Restore split view" : "Expand 3D view"} aria-pressed={expanded} onClick={onToggleExpand}>
+            {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </Button>
         </div>
       </div>

@@ -5,6 +5,7 @@ import { alphaBounds, masked } from "../core/canvas";
 import { combineSelection, floodMask, polygonMask, invertSelection } from "../tools/selection";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
+import { ImportIslandPicker, type ImportIslandChoice } from "./ImportIslandPicker";
 
 type ImportTool = "rect" | "lasso" | "polygon" | "wand";
 type Drag = { kind: "selection" | "pan"; start: Point; points: Point[]; mode: SelectionMode; pan?: Point };
@@ -18,6 +19,8 @@ export function ImageImportDialog({ source }: { source: { image: HTMLCanvasEleme
   const [tolerance, setTolerance] = useState(24), [contiguous, setContiguous] = useState(true);
   const [size, setSize] = useState({ w: 800, h: 480 }), [zoom, setZoom] = useState(1), [pan, setPan] = useState({ x: 0, y: 0 });
   const [importing, setImporting] = useState(false), [error, setError] = useState("");
+  const [step, setStep] = useState<"area" | "island">("area");
+  const [choice, setChoice] = useState<ImportIslandChoice | null>(null);
   const bounds = useMemo(() => mask ? alphaBounds(mask) : { x: 0, y: 0, width: image.width, height: image.height }, [mask, image]);
   const selected = useMemo(() => mask ? masked(image, mask) : null, [image, mask]);
   const scale = Math.min((size.w - 40) / image.width, (size.h - 40) / image.height) * zoom;
@@ -45,14 +48,18 @@ export function ImageImportDialog({ source }: { source: { image: HTMLCanvasEleme
   const cancel = () => { if (!importing) e.cancelImageImport(); };
   const accept = async () => {
     if (!bounds || path.length || importing) return;
+    if (e.model && [...e.docs.values()].some(d => d.islands.length)) { setChoice(null); setStep("island"); return; }
+    await finish();
+  };
+  const finish = async (binding?: ImportIslandChoice | null) => {
     setImporting(true); setError("");
-    try { await e.acceptImageImport(mask, target || null); }
+    try { await e.acceptImageImport(mask, target || null, binding); }
     catch (err) { setError(err instanceof Error ? err.message : String(err)); setImporting(false); }
   };
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     preview.current?.focus();
-    const observer = new ResizeObserver(([entry]) => setSize({ w: entry.contentRect.width, h: entry.contentRect.height }));
+    const observer = new ResizeObserver(([entry]) => { if (entry.contentRect.width && entry.contentRect.height) setSize({ w: entry.contentRect.width, h: entry.contentRect.height }); });
     observer.observe(host.current!);
     const release = () => { space.current = false; drag.current = null; };
     window.addEventListener("blur", release);
@@ -86,12 +93,13 @@ export function ImageImportDialog({ source }: { source: { image: HTMLCanvasEleme
       onKeyDown={ev => {
         if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); if (path.length) resetPath(); else cancel(); return; }
         if (ev.key === "Tab") {
-          const controls = [...root.current!.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled),select:not(:disabled),canvas")];
+          const controls = [...root.current!.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled),select:not(:disabled),canvas,[role=button]")].filter(el => el.getClientRects().length);
           const first = controls[0], last = controls.at(-1);
           if (ev.shiftKey && document.activeElement === first) { ev.preventDefault();last?.focus(); }
           else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault();first?.focus(); }
           return;
         }
+        if (step === "island") return;
         if ((ev.target as HTMLElement).closest("input,select")) return;
         if (ev.code === "Space" && ev.target === preview.current) { ev.preventDefault();space.current = true; }
         if ((ev.ctrlKey || ev.metaKey) && ev.code === "KeyA") { ev.preventDefault(); all(); }
@@ -101,6 +109,7 @@ export function ImageImportDialog({ source }: { source: { image: HTMLCanvasEleme
         else if (ev.key === "Enter" && ev.target === preview.current) { ev.preventDefault();if (polygon.current.length) finishPolygon();else void accept(); }
       }}>
       <div className="modal-title"><h2 id="image-import-title">Import image</h2><Button title="Cancel image import" disabled={importing} onClick={cancel}><X size={18} /></Button></div>
+      <div className="image-import-area" style={{ display: step === "area" ? undefined : "none" }}>
       <div className="image-import-source">{source.name} <span>{image.width} × {image.height}</span></div>
       <div className="image-import-tools" role="toolbar" aria-label="Import selection tools">
         {([{ id: "rect", label: "Rectangle (M)", Icon: SquareDashed }, { id: "lasso", label: "Lasso (L)", Icon: Lasso },
@@ -157,6 +166,18 @@ export function ImageImportDialog({ source }: { source: { image: HTMLCanvasEleme
         <div className="spacer" /><button disabled={importing} onClick={cancel}>Cancel</button>
         <button className="primary" disabled={importing || !bounds || !!path.length} onClick={() => void accept()}>{importing ? "Importing…" : "Import selected area"}</button>
       </div>
+      </div>
+      {step === "island" && <>
+        <p className="image-import-hint">Choose a UV island for the imported image{target ? " in the current material" : ""}. Hover to highlight · Middle-drag to orbit.</p>
+        <ImportIslandPicker targetMaterial={target ? e.activeId : undefined} onPick={setChoice} />
+        <div className="image-import-footer">
+          <button disabled={importing} onClick={() => { setError(""); setStep("area"); }}>Back to image area</button>
+          <div className="spacer" />
+          <button disabled={importing} onClick={() => void finish(null)}>Import without link</button>
+          <button className="primary" disabled={importing || !choice} onClick={() => void finish(choice)}>{importing ? "Importing…" : "Import linked image"}</button>
+        </div>
+        {error && <p role="alert" className="import-error">{error}</p>}
+      </>}
     </div>
   </div>;
 }

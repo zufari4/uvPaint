@@ -28,12 +28,15 @@ import { transferAlpha } from "../tools/alpha-transfer";
 import { loadPreferences, preferenceKey } from "./preferences";
 import { faceKey } from "../tools/uv-guides";
 import { sourceGeometry } from "../render/mesh-source";
+import { encodeProject, decodeProject } from "./project";
 
 export class Editor {
   docs = new Map<string, TextureDocument>();
   textureDocuments = new Map<string, TextureDocument>();
   histories = new Map<string, History>();
   activeId = "";
+  projectName = "";
+  private projectHandle: string | undefined;
   model: ModelAsset | null = null;
   tool: Tool = "move";
   selectionMode: SelectionMode = "replace";
@@ -43,7 +46,7 @@ export class Editor {
   brushOpacity = 1;
   tolerance = 24;
   contiguous = true;
-  uvDisplay: UVDisplayMode = "off";
+  uvDisplay: UVDisplayMode = "outline";
   hiddenFaces = new Set<string>();
   islandMenu: {x:number; y:number} | null = null;
   pickingLayerIsland = false;
@@ -55,7 +58,7 @@ export class Editor {
   uvOpacity = 0.65;
   textScale = 1.4;
   previewMode: "unlit" | "studio" = "studio";
-  previewEdges = false;
+  previewEdges = true;
   transform: TransformSession | null = null;
   private transformFrame = 0;
   private pendingTransform: { session: TransformSession; points: Point[] } | null = null;
@@ -235,6 +238,60 @@ export class Editor {
     const file = await pickFile("model");
     if (file) await this.importModel(file.bytes, file.name);
   }
+  async openProject() {
+    const file = await pickFile("project");
+    if (file) await this.importProject(file.bytes, file.name, file.handle);
+  }
+  async projectBytes() {
+    if (!this.doc) throw new Error("Create a texture or open a model first.");
+    this.confirmTransform();
+    const stored = new Map(this.textureDocuments);
+    for (const doc of this.docs.values()) stored.set(this.documentKey(doc), doc);
+    const documents = this.model
+      ? this.model.slots.flatMap(slot => slot.documents.map(template => stored.get(this.documentKey(template)) ?? template))
+      : [...this.docs.values()];
+    return encodeProject({ model: this.model, documents,
+      openDocuments: [...this.docs.values()].map(doc => documents.indexOf(doc)), activeDocument: documents.indexOf(this.doc),
+      hiddenFaces: this.hiddenFaces, previewMode: this.previewMode, previewEdges: this.previewEdges,
+      paint: { tool: this.tool, color: this.color, backgroundColor: this.backgroundColor, brushSize: this.brushSize,
+        brushOpacity: this.brushOpacity, tolerance: this.tolerance, contiguous: this.contiguous } });
+  }
+  async saveProject(saveAs = false) {
+    if (!this.doc) return;
+    const bytes = await this.projectBytes();
+    const name = this.projectName || `${(this.model?.name ?? this.doc.name).replace(/\.[^.]+$/, "")}.uvpaint`;
+    if (window.desktop) {
+      const saved = await window.desktop.saveProject(bytes, name, saveAs ? undefined : this.projectHandle);
+      if (!saved) return;
+      this.projectName = saved.name;this.projectHandle = saved.handle;
+    } else {
+      const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" }));
+      const link = document.createElement("a");link.href = url;link.download = name;link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);this.projectName = name;
+    }
+    this.notify(`Project saved: ${this.projectName}`);
+  }
+  async importProject(bytes: Uint8Array, name: string, handle?: string) {
+    // Decode and validate everything before replacing the current workspace.
+    const state = await decodeProject(bytes, (w, h) => this.checkSize(w, h));
+    this.cancelTransform();
+    if (this.model) disposeModel(this.model);
+    this.model = state.model;
+    this.docs.clear();this.textureDocuments.clear();this.histories.clear();
+    for (const doc of state.documents) this.textureDocuments.set(this.documentKey(doc), doc);
+    for (const index of state.openDocuments) {
+      const doc = state.documents[index];this.docs.set(doc.id, doc);
+      const slot = this.model?.slots.find(s => s.id === doc.id);
+      if (slot) syncMaterial(slot, doc, composite(doc));
+    }
+    this.activeId = state.documents[state.activeDocument].id;
+    this.hiddenFaces = state.hiddenFaces;this.previewMode = state.previewMode;this.previewEdges = state.previewEdges;
+    this.tool = state.paint.tool;this.color = state.paint.color;this.backgroundColor = state.paint.backgroundColor;
+    this.brushSize = state.paint.brushSize;this.brushOpacity = state.paint.brushOpacity;this.tolerance = state.paint.tolerance;this.contiguous = state.paint.contiguous;
+    this.islandMenu = null;this.pickingLayerIsland = false;this.cloneSource = null;this.output = null;
+    this.projectName = name;this.projectHandle = handle;
+    this.emit(true);this.notify(`Project opened: ${name}`);
+  }
   async importModel(bytes: Uint8Array, name: string) {
     const result = await loadGLB(new Uint8Array(bytes).buffer, name, (w, h) =>
       this.checkSize(w, h),
@@ -245,6 +302,7 @@ export class Editor {
     this.install(await demoModel((w, h) => this.checkSize(w, h)));
   }
   install({ model, docs }: { model: ModelAsset; docs: TextureDocument[] }) {
+    this.projectName = "";this.projectHandle = undefined;
     if (this.model) disposeModel(this.model);
     this.model = model;
     this.hiddenFaces = new Set();
@@ -383,7 +441,7 @@ export class Editor {
     this.emit();
     finish?.();
   }
-  async acceptImageImport(mask: HTMLCanvasElement | null, targetLayerId: string | null) {
+  async acceptImageImport(mask: HTMLCanvasElement | null, targetLayerId: string | null, binding?: { materialId: string; islandId: number } | null) {
     const pending = this.imageImport;
     if (!pending) return;
     let image = pending.image;
@@ -394,7 +452,7 @@ export class Editor {
       image = canvas(bounds.width, bounds.height);
       context(image).drawImage(selected, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
     }
-    await this.importPreparedImage(image, pending.name, targetLayerId);
+    await this.importPreparedImage(image, pending.name, targetLayerId, binding);
     this.cancelImageImport();
   }
   async importImage(bytes: Uint8Array, name: string) {
@@ -402,12 +460,24 @@ export class Editor {
     await this.checkSize(image.width, image.height);
     await this.importPreparedImage(image, name);
   }
-  private async importPreparedImage(image: HTMLCanvasElement, name: string, targetLayerId: string | null = null) {
+  private async importPreparedImage(image: HTMLCanvasElement, name: string, targetLayerId: string | null = null, binding?: { materialId: string; islandId: number } | null) {
+    const bindingDoc = binding ? this.docs.get(binding.materialId) : undefined;
+    const boundIsland = bindingDoc?.islands.find(i => i.id === binding?.islandId);
+    if (binding && (!boundIsland || (targetLayerId && binding.materialId !== this.activeId))) throw new Error("Choose an island belonging to the target material.");
     if (targetLayerId && !this.doc?.layers.some(layer => layer.id === targetLayerId))
       throw new Error("The target layer is no longer available.");
     if (!this.doc) await this.newCanvas(image.width, image.height);
     this.confirmTransform();
-    const targetMask = targetLayerId ? this.doc!.layers.find(layer => layer.id === targetLayerId)!.uvMask ?? null : null;
+    if (binding && binding.materialId !== this.activeId) this.selectMaterial(binding.materialId);
+    const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    for (const triangle of boundIsland?.triangles ?? []) for (const p of triangle) {
+      bounds.minX=Math.min(bounds.minX,p.x); bounds.maxX=Math.max(bounds.maxX,p.x);
+      bounds.minY=Math.min(bounds.minY,p.y); bounds.maxY=Math.max(bounds.maxY,p.y);
+    }
+    const offset = Number.isFinite(bounds.minX) ? {
+      x: (bounds.minX + bounds.maxX) * this.doc!.width / 2 - image.width / 2,
+      y: (bounds.minY + bounds.maxY) * this.doc!.height / 2 - image.height / 2,
+    } : { x: 0, y: 0 };
     let rest = canvas(this.doc!.width, this.doc!.height);
     this.change("Import image", (d) => {
       const c = canvas(d.width, d.height);
@@ -417,7 +487,7 @@ export class Editor {
         rest = target.canvas;
         ctx.drawImage(rest, 0, 0);
       }
-      ctx.drawImage(image, 0, 0);
+      ctx.drawImage(image, offset.x, offset.y);
       const l = target ?? this.makeLayer(c, name);
       if (!target) {
         l.uvBinding = d.layers.find(layer => layer.id === d.activeId)?.uvBinding;
@@ -427,15 +497,20 @@ export class Editor {
         l.canvas = c;
         l.placement = undefined;
       }
+      if (binding !== undefined) {
+        l.uvBinding = boundIsland ? { uvSet: d.uvSet, island: boundIsland } : undefined;
+        l.uvMask = boundIsland ? islandMask({ ...d, islands: [boundIsland], selectedIslands: [] }) : d.restrict ? islandMask({ ...d, selectedIslands: [] }) : null;
+        d.selectedIslands = boundIsland ? [boundIsland.id] : [];
+      }
       d.activeId = l.id;
       d.selection = null;
     });
     const d = this.doc!,
       points = [
-        { x: 0, y: 0 },
-        { x: image.width, y: 0 },
-        { x: image.width, y: image.height },
-        { x: 0, y: image.height },
+        { x: offset.x, y: offset.y },
+        { x: offset.x + image.width, y: offset.y },
+        { x: offset.x + image.width, y: offset.y + image.height },
+        { x: offset.x, y: offset.y + image.height },
       ];
     this.transform = {
       kind: "free",
@@ -445,7 +520,7 @@ export class Editor {
       original: points.map((p) => ({ ...p })),
       before: snapshot(d),
       layerId: d.activeId,
-      clip: targetLayerId ? targetMask : editingMask(d, false),
+      clip: this.layer?.uvMask ?? editingMask(d, false),
     };
     this.tool = "move";
     this.updateTransform(points);
@@ -773,6 +848,18 @@ export class Editor {
     if (linked && linked.id !== d.activeId) this.selectLayer(linked.id);
     if (add && this.doc) this.doc.selectedIslands = selection;
     this.selectIsland(island.id, add);
+  }
+  selectCanvasIsland(id: number, add = false) {
+    this.confirmTransform();
+    const d = this.doc;
+    if (!d) return;
+    const candidates = d.layers.filter(l => l.uvBinding?.uvSet === d.uvSet && l.uvBinding.island.id === id);
+    const linked = candidates.find(l => l.id === d.activeId)
+      ?? candidates.slice().reverse().find(l => l.visible) ?? candidates.at(-1);
+    const selection = [...d.selectedIslands];
+    if (linked && linked.id !== d.activeId) this.selectLayer(linked.id);
+    if (add) d.selectedIslands = selection;
+    this.selectIsland(id, add);
   }
   setTool(tool: Tool) {
     this.pickingLayerIsland = false;

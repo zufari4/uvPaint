@@ -72,6 +72,7 @@ export type MaterialSlot = {
   documents: TextureDocument[];
 };
 export type ModelAsset = {
+  source?: { kind: "glb"; bytes: Uint8Array } | { kind: "sample" };
   name: string;
   scene: THREE.Group;
   slots: MaterialSlot[];
@@ -108,9 +109,10 @@ declare global {
   interface Window {
     desktop?: {
       openFile(
-        kind: "model" | "image",
-      ): Promise<{ name: string; bytes: Uint8Array } | null>;
+        kind: "model" | "image" | "project",
+      ): Promise<{ name: string; bytes: Uint8Array; handle?: string } | null>;
       savePNG(bytes: Uint8Array, name: string): Promise<string | null>;
+      saveProject(bytes: Uint8Array, name: string, handle?: string): Promise<{ name: string; handle: string } | null>;
       memory(): Promise<number>;
       windowState(): Promise<{ maximized: boolean }>;
       windowAction(action: "minimize" | "maximize" | "close"): Promise<void>;

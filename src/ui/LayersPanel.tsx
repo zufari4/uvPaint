@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import type { HTMLAttributes } from "react";
 import {
   Layers,
   Eye,
@@ -21,7 +22,7 @@ function Thumbnail({ layer, refresh }: { layer: Layer; refresh: number }) {
     const c = ref.current!,
       x = c.getContext("2d")!;
     x.clearRect(0, 0, 44, 36);
-    const s = Math.min(44 / layer.canvas.width, 36 / layer.canvas.height);
+    const s = Math.max(44 / layer.canvas.width, 36 / layer.canvas.height);
     x.drawImage(
       layer.canvas,
       (44 - layer.canvas.width * s) / 2,
@@ -32,7 +33,7 @@ function Thumbnail({ layer, refresh }: { layer: Layer; refresh: number }) {
   }, [layer.canvas, refresh]);
   return <canvas className="layer-thumb" ref={ref} width="44" height="36" />;
 }
-export function LayersPanel() {
+export function LayersPanel({ headingProps }: { headingProps?: HTMLAttributes<HTMLDivElement> }) {
   const e = useEditor(),
     d = e.doc,
     l = e.layer;
@@ -44,7 +45,7 @@ export function LayersPanel() {
   }, [d?.islands, d?.uvSet, e.hiddenFaces]);
   return (
     <div className="layers-panel">
-      <div className="section-heading">
+      <div {...headingProps} className="section-heading layers-drag-heading">
         <span>
           <Layers size={14} /> LAYERS <b>{d?.layers.length ?? 0}</b>
         </span>

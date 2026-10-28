@@ -3,6 +3,16 @@ import type { Island, IslandFace, Point, TextureDocument } from "../types";
 import { sourceGeometry } from "../render/mesh-source";
 import { guideEdges } from "./uv-guides";
 import { canvas, context, cloneCanvas } from "../core/canvas";
+const faceLookup = new WeakMap<Island[], Map<string, Island>>();
+export function islandForFace(islands: Island[], meshId: string, triangle: number) {
+  let lookup = faceLookup.get(islands);
+  if (!lookup) {
+    lookup = new Map();
+    for (const island of islands) for (const face of island.faces ?? []) lookup.set(`${face.meshId}:${face.triangle}`, island);
+    faceLookup.set(islands, lookup);
+  }
+  return lookup.get(`${meshId}:${triangle}`);
+}
 export function extractIslands(
   scene: THREE.Object3D,
   materialId: string,

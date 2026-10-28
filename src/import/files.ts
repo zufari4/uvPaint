@@ -1,11 +1,11 @@
 import { canvas, context } from "../core/canvas";
-export async function pickFile(kind: "model" | "image") {
+export async function pickFile(kind: "model" | "image" | "project") {
   if (window.desktop) return window.desktop.openFile(kind);
-  return new Promise<{ name: string; bytes: Uint8Array } | null>((resolve) => {
+  return new Promise<{ name: string; bytes: Uint8Array; handle?: string } | null>((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept =
-      kind === "model" ? ".glb" : "image/png,image/jpeg,image/webp,image/bmp";
+      kind === "model" ? ".glb" : kind === "project" ? ".uvpaint" : "image/png,image/jpeg,image/webp,image/bmp";
     input.onchange = async () => {
       const file = input.files?.[0];
       resolve(

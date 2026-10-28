@@ -42,6 +42,12 @@ describe("Island preview identity and isolation",()=>{
     expect(a.geometry.index!.count).toBe(6);expect(b.geometry.index!.count).toBe(0);
     const overlay=a.children.find(c=>c.userData.uvPaintSelection) as THREE.Mesh;
     expect(overlay.geometry.index!.count).toBe(6);
+    const hiddenEdges = b.children.find(c=>c instanceof THREE.LineSegments) as THREE.LineSegments;
+    expect(hiddenEdges.geometry.getAttribute("position").count).toBe(0);
+    view.sync(hidden,selected,true,hidden);
+    expect(b.children.find(c=>c.userData.uvPaintHover)!.visible).toBe(false);
+    view.sync(hidden,selected,true,selected);
+    expect(a.children.find(c=>c.userData.uvPaintHover)!.visible).toBe(true);
     expect(view.originalFace(a,1)).toBe(1);
     const rebuilt=view.rebuilds;view.sync(hidden,selected,true);expect(view.rebuilds).toBe(rebuilt);
     expect(extractIslands(scene,"m","uv")).toHaveLength(2);

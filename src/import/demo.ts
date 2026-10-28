@@ -43,5 +43,6 @@ export async function demoModel(
   x.fillStyle = "#455357";
   x.fillRect(0, 0, d.width, d.height);
   d.layers[0].name = "Cap color";
+  result.model.source = { kind: "sample" };
   return result;
 }

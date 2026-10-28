@@ -116,6 +116,9 @@ try {
     "Placement retains full layer pixels and shows a separate outside ghost",
   );
   await page.getByTitle("Fit canvas", { exact: true }).click();
+  // Keep the bottom-right transform handle clear of the compact Layers overlay.
+  let zoomFactor = 1 / 1.2 ** 3;
+  for (let i = 0; i < 3; i++) await page.getByTitle("Zoom out", { exact: true }).click();
   const geometry = async () => {
     const box = await page.getByTestId("texture-canvas").boundingBox();
     const state = await page.evaluate(async () => {
@@ -126,7 +129,7 @@ try {
         points: e.transform?.points,
       };
     });
-    const z = Math.min(
+    const z = zoomFactor * Math.min(
       (box.width - 100) / state.width,
       (box.height - 100) / state.height,
     );
@@ -273,8 +276,10 @@ try {
     throw new Error("Viewport did not settle");
   };
   let before = await capture();
+  const orientation = () => page.locator('.view-cube svg').innerHTML();
+  const beforeOrientation = await orientation();
   await drag(center3, end);
-  ok(before === (await capture()), "Left drag does not orbit");
+  ok(beforeOrientation === await orientation(), "Left drag does not orbit");
   before = await capture();
   await drag(center3, end, "middle");
   ok(before !== (await capture()), "Middle drag orbits the 3D model");
@@ -367,6 +372,7 @@ try {
     await e.importImage(new Uint8Array(await (await toPNG(source)).arrayBuffer()), "snap-fixture.png");
   });
   await page.getByTitle("Fit canvas", { exact: true }).click();
+  zoomFactor = 1;
   g = await geometry();
   await page.keyboard.down("Control");
   await drag(screen({x:32,y:32}, g), screen({x:45,y:43}, g));

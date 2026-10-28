@@ -19,12 +19,12 @@ try {
       history:e.doc?e.history.undoStack.length:0,counts:e.model?.parts.map(p=>p.geometry.index?.count??p.geometry.getAttribute("position").count)??[],
       highlight:e.model?.parts.reduce((s,p)=>s+p.children.filter(c=>c.userData.uvPaintSelection).reduce((sum,o)=>sum+(o.visible?o.geometry.index.count:0),0),0)??0};
   });
-  ok((await read()).scale===1.4&&(await read()).mode==="off","New preferences start at 140% with UV display off");
+  ok((await read()).scale===1.4&&(await read()).mode==="outline","New preferences start at 140% with UV outlines");
   ok(await page.locator('.canvas-footer,.uv-hint,.session-note,[aria-label="Show UV overlay"],.viewport-axis').count()===0,"Removed hint panels, UV checkbox and decorative axes stay absent");
   ok(await page.locator('.header-actions [title^="Open GLB"],.header-actions [title^="Export PNG"]').count()===0,"File commands are absent from the header");
   await page.getByTitle("Application menu",{exact:true}).click();
   ok(await page.getByRole("menuitem",{name:"Export PNG",exact:true}).isDisabled(),"PNG export is disabled without a document");
-  await page.keyboard.press("ArrowDown");await page.keyboard.press("Enter");
+  await page.keyboard.press("ArrowDown");await page.keyboard.press("ArrowDown");await page.keyboard.press("Enter");
   await page.getByLabel("UV display mode").waitFor();
   ok(await page.getByLabel("UV display mode").locator("option").count()===4,"UV display modes live in Settings with keyboard menu navigation");
   for(const mode of ["quads","triangles","outline","off"]){

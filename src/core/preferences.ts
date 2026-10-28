@@ -6,7 +6,7 @@ export function loadPreferences(): {
   textScale: number;
   uvDisplay: UVDisplayMode;
 } {
-  const defaults = { uvColor: "#a5ece0", uvOpacity: 0.65, textScale: 1.4, uvDisplay: "off" as UVDisplayMode };
+  const defaults = { uvColor: "#a5ece0", uvOpacity: 0.65, textScale: 1.4, uvDisplay: "outline" as UVDisplayMode };
   try {
     const saved = JSON.parse(localStorage.getItem(preferenceKey) ?? "null");
     if (!saved || typeof saved !== "object") return defaults;
