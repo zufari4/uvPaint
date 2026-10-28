@@ -35,7 +35,7 @@ export class PaintStroke {
       );
     if (editor.brushOpacity === 0)
       throw new Error("Brush opacity is 0%. Increase Opacity to paint.");
-    if (d.restrict && !d.islands.length)
+    if (d.restrict && !d.islands.length && !layer.uvBinding)
       throw new Error(
         "This UV map has no islands. Choose another UV map or disable UV clipping.",
       );

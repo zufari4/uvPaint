@@ -1,9 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, Menu } from "electron";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { freemem } from "node:os";
 let win: BrowserWindow;
 app.whenReady().then(() => {
+  // The default Electron Edit menu routes Ctrl+Z to Chromium's text history.
+  // The application has its own menu and document-level keyboard shortcuts.
+  Menu.setApplicationMenu(null);
   win = new BrowserWindow({
     width: 1560,
     height: 1000,

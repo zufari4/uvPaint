@@ -374,7 +374,7 @@ try {
       e.model.slots[0].texture.image === e.output,
       "Live preview uses the same composite as texture canvas",
     );
-    e.uvVisible = false;
+    e.uvDisplay = "off";
     e.emit();
     check(
       composite(e.doc).toDataURL() === clean.toDataURL(),
@@ -572,7 +572,7 @@ try {
       e.doc.islands.length > 1,
       "Overlapping but disconnected UV islands remain separate",
     );
-    e.uvVisible = true;
+    e.uvDisplay = "triangles";
     e.tool = "move";
     e.color = "#f06b4f";
     e.emit();
@@ -636,8 +636,9 @@ try {
   await app.evaluate(({ dialog }, target) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: target });
   }, savePath);
+  await page.getByTitle("Application menu", {exact:true}).click();
   await page
-    .getByRole("button", { name: "Export PNG (Ctrl+Shift+S)", exact: true })
+    .getByRole("menuitem", { name: "Export PNG", exact: true })
     .click();
   await page.waitForFunction(() =>
     document.querySelector(".notice-toast")?.textContent?.includes("Exported"),

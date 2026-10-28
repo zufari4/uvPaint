@@ -96,11 +96,11 @@ export function HelpDialog({ close }: { close: () => void }) {
           </dd>
           <dt>Transform</dt>
           <dd>
-            Ctrl+T free transform · Corners scale · Outside corners rotate
+            Ctrl+T free transform · Corners scale · Outside frame rotates
             <br />
             Shift unlocks proportions / snaps rotation · Alt from center
             <br />
-            Ctrl snaps rotation to 5° and movement to 8 texture pixels
+            Ctrl snaps rotation to 5° and movement to 10 texture pixels
             <br />
             Ctrl-drag a corner distorts · Warp has 16 control points
             <br />

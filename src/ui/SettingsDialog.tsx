@@ -31,7 +31,7 @@ export function SettingsDialog({
           }
           if (event.key === "Tab") {
             const controls =
-              root.current?.querySelectorAll<HTMLElement>("button,input");
+              root.current?.querySelectorAll<HTMLElement>("button,input,select");
             if (!controls?.length) return;
             const first = controls[0],
               last = controls[controls.length - 1];
@@ -67,6 +67,16 @@ export function SettingsDialog({
         </label>
         <h3>UV guides</h3>
         <label className="setting-row">
+          <span>Display</span>
+          <select aria-label="UV display mode" value={e.uvDisplay}
+            onChange={(event) => e.setUVDisplay(event.target.value as typeof e.uvDisplay)}>
+            <option value="off">Off</option>
+            <option value="quads">Quads (approximate)</option>
+            <option value="triangles">Triangles</option>
+            <option value="outline">Outline</option>
+          </select>
+        </label>
+        <label className="setting-row">
           <span>Line color</span>
           <input
             aria-label="UV line color"
@@ -94,6 +104,23 @@ export function SettingsDialog({
         </label>
         <small>Applied immediately and saved for all models.</small>
         <h3>Texture canvas</h3>
+        {e.doc && <>
+          <label className="setting-row">
+            <span>Clip unlinked layers to UV islands</span>
+            <input aria-label="Clip edits to UV islands" type="checkbox" checked={e.doc.restrict}
+              onChange={ev => e.change("Island restriction", d => { d.restrict = ev.target.checked; })} />
+          </label>
+          {e.model && <label className="setting-row">
+            <span>UV map name</span>
+            <input aria-label="UV map name" key={`${e.doc.id}-${e.doc.uvSet}`} placeholder="Name this UV map…"
+              defaultValue={e.doc.uvNames?.[e.doc.uvSet] ?? ""}
+              onBlur={ev => {
+                const value = ev.target.value;
+                if (value !== (e.doc?.uvNames?.[e.doc.uvSet] ?? ""))
+                  e.change("Rename UV map", d => { d.uvNames = { ...d.uvNames, [d.uvSet]: value }; });
+              }} />
+          </label>}
+        </>}
         <div className="setting-row">
           <span>
             {e.doc

@@ -1,4 +1,4 @@
-export function canvas(width: number, height: number): HTMLCanvasElement {
+export function canvas(width: number, height: number, readFrequently = true): HTMLCanvasElement {
   if (
     !Number.isSafeInteger(width) ||
     !Number.isSafeInteger(height) ||
@@ -9,9 +9,12 @@ export function canvas(width: number, height: number): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = width;
   c.height = height;
-  const ctx = c.getContext("2d", { willReadFrequently: true });
+  const ctx = c.getContext("2d", { willReadFrequently: readFrequently });
   if (!ctx || c.width !== width || c.height !== height)
     throw new Error(`Cannot allocate ${width} × ${height} canvas.`);
+  // Render buffers stay GPU-backed. Documents are allocation-checked before
+  // entering the render loop; reading back a probe here would force a GPU stall.
+  if (!readFrequently) return c;
   try {
     ctx.fillStyle = "#fff";
     ctx.fillRect(width - 1, height - 1, 1, 1);
@@ -36,8 +39,14 @@ export function masked(
   source: HTMLCanvasElement,
   mask: HTMLCanvasElement | null,
   invert = false,
+  target?: HTMLCanvasElement,
 ) {
-  const c = cloneCanvas(source);
+  const c = target ?? cloneCanvas(source);
+  if (target) {
+    const ctx = context(c);
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.drawImage(source, 0, 0);
+  }
   if (mask) {
     const ctx = context(c);
     ctx.globalCompositeOperation = invert

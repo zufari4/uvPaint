@@ -59,9 +59,9 @@ export function OptionsBar() {
           Clear selection
         </Button>
       )}
-      {!selection && e.doc?.restrict && (
+      {!selection && (e.doc?.restrict || e.layer?.uvBinding || (e.tool === "fill" && !!e.doc?.islands.length)) && (
         <span className="options-hint">
-          UV clipping: {e.doc.selectedIslands.length || "all"} islands
+          {e.tool === "fill" && e.doc?.islands.length ? "Fill: island under cursor" : `UV clipping: ${e.layer?.uvBinding ? `Island ${String(e.layer.uvBinding.island.id + 1).padStart(2, "0")}` : `${e.doc?.selectedIslands.length || "all"} islands`}`}
         </span>
       )}
       {selection && (
@@ -109,7 +109,7 @@ export function OptionsBar() {
           </Button>
         </>
       )}
-      {["wand", "fill"].includes(e.tool) && (
+      {(e.tool === "wand" || (e.tool === "fill" && !e.doc?.islands.length && !e.model)) && (
         <>
           <label>
             Tolerance{" "}
@@ -140,6 +140,7 @@ export function OptionsBar() {
       )}
       {["brush", "eraser", "clone", "fill"].includes(e.tool) && (
         <>
+          {e.tool !== "fill" && (
           <label>
             Size{" "}
             <input
@@ -154,6 +155,7 @@ export function OptionsBar() {
             />{" "}
             px
           </label>
+          )}
           <label>
             Opacity{" "}
             <input

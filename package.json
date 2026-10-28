@@ -14,7 +14,13 @@
     "test:e2e": "node scripts/e2e.mjs",
     "test:materials": "node scripts/regression-material.mjs",
     "test:interaction": "node scripts/regression-interaction.mjs",
+    "test:transform": "node scripts/regression-transform.mjs",
     "test:workspace": "node scripts/regression-workspace.mjs",
+    "test:islands": "node scripts/regression-islands.mjs",
+    "test:layer-islands": "node scripts/regression-layer-islands.mjs",
+    "test:import": "node scripts/regression-import.mjs",
+    "test:undo": "node scripts/regression-undo.mjs",
+    "test:fill": "node scripts/regression-fill.mjs",
     "test:packaged": "node scripts/packaged-smoke.mjs",
     "dist": "npm run build && electron-builder --win --x64 --dir"
   },

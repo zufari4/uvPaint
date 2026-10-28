@@ -1,21 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { Menu, Settings, HelpCircle, Info } from "lucide-react";
+import { Menu, Settings, HelpCircle, Info, FolderOpen, Download } from "lucide-react";
+import { useEditor } from "./hooks";
 export function AppMenu({
   onSelect,
 }: {
   onSelect: (item: "settings" | "help" | "about") => void;
 }) {
+  const e = useEditor();
   const [open, setOpen] = useState(false),
     root = useRef<HTMLDivElement>(null),
     trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
-    root.current?.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus();
+    root.current?.querySelector<HTMLButtonElement>("[role=menuitem]:not(:disabled)")?.focus();
     const outside = (event: PointerEvent) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
+    document.addEventListener("pointerdown", outside, true);
+    return () => document.removeEventListener("pointerdown", outside, true);
   }, [open]);
   return (
     <div
@@ -32,7 +34,7 @@ export function AppMenu({
         }
         const items = [
           ...(root.current?.querySelectorAll<HTMLButtonElement>(
-            "[role=menuitem]",
+            "[role=menuitem]:not(:disabled)",
           ) ?? []),
         ];
         const index = items.indexOf(
@@ -68,6 +70,15 @@ export function AppMenu({
           role="menu"
           aria-label="Application menu"
         >
+          <button role="menuitem" title="Open GLB (Ctrl+O)" disabled={e.busy}
+            onClick={() => { setOpen(false); trigger.current?.focus(); void e.run(() => e.openModel()); }}>
+            <FolderOpen size={18} /> Open GLB
+          </button>
+          <button role="menuitem" title="Export PNG (Ctrl+Shift+S)" disabled={!e.doc || e.busy}
+            onClick={() => { setOpen(false); trigger.current?.focus(); void e.run(() => e.export()); }}>
+            <Download size={18} /> Export PNG
+          </button>
+          <div className="menu-divider" role="separator" />
           {(
             [
               ["settings", Settings, "Settings"],

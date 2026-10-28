@@ -1,0 +1,47 @@
+import { _electron as electron } from 'playwright';
+import { createServer } from 'vite';
+import assert from 'node:assert/strict';
+const server=await createServer();await server.listen();
+const env={...process.env,UVPAINT_DEV_URL:'http://127.0.0.1:5173'};delete env.ELECTRON_RUN_AS_NODE;
+const app=await electron.launch({args:['.',`--user-data-dir=${process.cwd()}/test-results/fill-profile`],env});
+try {
+  const page=await app.firstWindow();await page.waitForSelector('.empty-canvas');
+  const checks=await page.evaluate(async()=>{
+    const {editor:e}=await import('/src/core/editor.ts');
+    const {context}=await import('/src/core/canvas.ts');
+    const {polygonMask}=await import('/src/tools/selection.ts');
+    const checks=[],ok=(v,label)=>{if(!v)throw new Error(label);checks.push(label);};
+    await e.newCanvas(64,64);
+    const square=(id,x0,x1)=>({id,triangles:[[{x:x0,y:.1},{x:x1,y:.1},{x:x1,y:.9}],[{x:x0,y:.1},{x:x1,y:.9},{x:x0,y:.9}]]});
+    e.doc.islands=[square(0,.1,.4),square(1,.6,.9)];e.doc.restrict=false;e.doc.selectedIslands=[1];
+    const pixel=(x,y=32)=>[...context(e.layer.canvas).getImageData(x,y,1,1).data];
+    context(e.layer.canvas).fillStyle='#ff0000';context(e.layer.canvas).fillRect(0,0,64,64);
+    context(e.layer.canvas).fillStyle='#0000ff';context(e.layer.canvas).fillRect(0,0,64,20);
+    const before=e.layer.canvas.toDataURL();e.color='#00ff00';e.tolerance=0;e.contiguous=false;
+    e.fill({x:12,y:32});
+    ok(pixel(12)[1]===255&&pixel(12,12)[1]===255,'Fill covers the entire hovered island across existing color boundaries');
+    ok(pixel(48)[0]===255&&pixel(48,12)[2]===255&&pixel(32)[0]===255,'Other islands and the space between them remain untouched, regardless of global selection or clipping');
+    e.undo();ok(e.layer.canvas.toDataURL()===before,'Undo restores every pixel before island fill');e.redo();ok(pixel(12)[1]===255,'Redo restores island fill');
+    const history=e.history.undoStack.length,filled=e.layer.canvas.toDataURL();e.fill({x:32,y:32});e.fill({x:-2,y:12});
+    ok(e.history.undoStack.length===history&&e.layer.canvas.toDataURL()===filled,'Clicking outside UV islands or outside the texture is a no-op');
+    e.setLayerIsland(0);const linked=e.history.undoStack.length;e.fill({x:48,y:32});
+    ok(e.history.undoStack.length===linked,'Fill cannot edit another island on a bound layer');
+    e.setSelection(polygonMask(64,64,[{x:0,y:0},{x:64,y:0},{x:64,y:20},{x:0,y:20}]));
+    e.color='#ffff00';e.fill({x:12,y:12});
+    ok(pixel(12,12)[0]===255&&pixel(12)[0]===0,'Pixel selection further limits the island fill');
+    e.deselect();e.brushOpacity=.5;e.color='#0000ff';e.fill({x:12,y:32});
+    ok(pixel(12)[1]>=126&&pixel(12)[1]<=128&&pixel(12)[2]>=127,'Island fill respects tool opacity');
+    e.setLayerIsland(null);e.doc.islands=[];e.doc.restrict=false;e.brushOpacity=1;e.color='#ff00ff';e.tolerance=0;e.contiguous=true;
+    e.fill({x:48,y:32});ok(pixel(48)[2]===255&&pixel(12)[0]!==255,'Standalone textures retain color-based bucket fill');
+    e.doc.islands=[square(0,.1,.4),square(1,.6,.9)];e.doc.selectedIslands=[];e.setTool('fill');e.color='#00ffff';e.emit();
+    return checks;
+  });
+  checks.forEach(c=>console.log('PASS',c));
+  assert.equal(await page.getByLabel('Tolerance',{exact:true}).count(),0);
+  assert.equal(await page.getByLabel('Brush size',{exact:true}).count(),0);
+  await page.getByTitle('Fit canvas',{exact:true}).click();
+  const b=await page.getByTestId('texture-canvas').boundingBox(),z=Math.min((b.width-100)/64,(b.height-100)/64);
+  await page.mouse.click(b.x+(b.width-64*z)/2+48*z,b.y+(b.height-64*z)/2+32*z);
+  assert.ok(await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');const p=e.layer.canvas.getContext('2d').getImageData(48,32,1,1).data;return p[0]===0&&p[1]===255&&p[2]===255;}));
+  console.log('PASS Canvas click fills the island under the pointer; irrelevant size/tolerance controls are hidden');
+} finally {await app.close();await server.close();}

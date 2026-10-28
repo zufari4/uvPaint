@@ -10,15 +10,6 @@ export const midpoint = (a: Point, b: Point): Point => ({
 export function transformHandles(points: Point[]) {
   return [...points, ...points.map((p, i) => midpoint(p, points[(i + 1) % 4]))];
 }
-export function rotationHandle(points: Point[], zoom: number) {
-  const top = midpoint(points[0], points[1]),
-    center = midpoint(points[0], points[2]);
-  const length = Math.hypot(top.x - center.x, top.y - center.y) || 1;
-  return {
-    x: top.x + (((top.x - center.x) / length) * 28) / zoom,
-    y: top.y + (((top.y - center.y) / length) * 28) / zoom,
-  };
-}
 export function hitTransform(
   points: Point[],
   p: Point,
@@ -33,11 +24,12 @@ export function hitTransform(
   if (handle >= 0)
     return { action: free && !ctrl ? "scale" : "distort", handle };
   if (free) {
-    const r = rotationHandle(points, zoom);
-    if (
-      Math.hypot(r.x - p.x, r.y - p.y) < 12 / zoom ||
-      points.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 27 / zoom)
-    )
+    const crosses = points.map((a, i) => {
+      const b = points[(i + 1) % points.length];
+      return (b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x);
+    });
+    const inside = crosses.every(v => v >= -1e-8) || crosses.every(v => v <= 1e-8);
+    if (!inside)
       return { action: "rotate", handle: -1 };
   }
   return { action: "move", handle: -1 };
@@ -53,7 +45,7 @@ export function dragTransform(
 ): Point[] {
   const center = midpoint(points[0], points[2]);
   if (hit.action === "move") {
-    const snap = (delta: number) => ctrl ? Math.round(delta / 8) * 8 : delta;
+    const snap = (delta: number) => ctrl ? Math.round(delta / 10) * 10 : delta;
     const dx = snap(p.x - start.x), dy = snap(p.y - start.y);
     return points.map((q) => ({
       x: q.x + dx,

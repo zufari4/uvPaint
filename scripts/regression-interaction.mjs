@@ -78,7 +78,7 @@ try {
       new Uint8Array(await (await toPNG(red)).arrayBuffer()),
       "placement.png",
     );
-    e.uvVisible = false;
+    e.uvDisplay = "off";
     e.emit();
     const ghost = context(e.transform.outside).getImageData(64, 64, 1, 1)
       .data[3];
@@ -192,7 +192,7 @@ try {
   after = await geometry();
   ok(
     Math.abs(after.points[0].x - 96) < 1 && Math.abs(after.points[0].y) < 1,
-    "Actual rotation handle turns the image 90 degrees",
+    "Actual rotation outside the frame turns the image 90 degrees",
   );
   await page.keyboard.down("Control");
   await drag(screen(after.points[0], after), screen({ x: 80, y: 10 }, after));
@@ -372,15 +372,15 @@ try {
   await drag(screen({x:32,y:32}, g), screen({x:45,y:43}, g));
   await page.keyboard.up("Control");
   g = await geometry();
-  ok(Math.abs(g.points[0].x-16)<.01 && Math.abs(g.points[0].y-8)<.01, "Ctrl-drag snaps movement to 8 texture pixels through actual pointer events");
-  const pivot = {x:48,y:40}, radius = 32+28/g.z;
+  ok(Math.abs(g.points[0].x-10)<.01 && Math.abs(g.points[0].y-10)<.01, "Ctrl-drag snaps movement to 10 texture pixels through actual pointer events");
+  const pivot = {x:42,y:42}, radius = 32+28/g.z;
   const angle = 8*Math.PI/180;
   await page.keyboard.down("Control");
   await drag(screen({x:pivot.x,y:pivot.y-radius},g), screen({x:pivot.x+radius*Math.sin(angle),y:pivot.y-radius*Math.cos(angle)},g));
   await page.keyboard.up("Control");
   g = await geometry();
   const snappedAngle = Math.atan2(g.points[1].y-g.points[0].y,g.points[1].x-g.points[0].x)*180/Math.PI;
-  ok(Math.abs(snappedAngle-10)<.01, "Ctrl rotation handle snaps 8 degree gesture to 10 degrees");
+  ok(Math.abs(snappedAngle-10)<.01, "Ctrl rotation outside the frame snaps 8 degree gesture to 10 degrees");
   await page.keyboard.press("Enter");
   await page.screenshot({ path: "test-results/05-interaction.png" });
   assert.deepEqual(errors, []);

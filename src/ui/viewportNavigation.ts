@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+export type ViewName = "front" | "back" | "left" | "right" | "top" | "bottom" | "isometric";
 
 /** Blender-style navigation in glTF's Y-up coordinate system. */
 export class ViewportNavigation {
@@ -51,7 +52,7 @@ export class ViewportNavigation {
     this.perspective.updateProjectionMatrix();
     this.orthographic.updateProjectionMatrix();
   }
-  private switchProjection(orthographic: boolean) {
+  switchProjection(orthographic: boolean) {
     const old = this.camera;
     const next = orthographic ? this.orthographic : this.perspective;
     if (old === next) return;
@@ -79,6 +80,14 @@ export class ViewportNavigation {
     next.updateProjectionMatrix();
     this.camera = next;
     this.orbit.object = next;
+    this.orbit.update();
+  }
+  toggleProjection() { this.switchProjection(this.camera !== this.orthographic); }
+  setView(view: ViewName) {
+    this.switchProjection(view !== "isometric");
+    const distance=this.camera.position.distanceTo(this.orbit.target);
+    const directions:Record<ViewName,number[]>={front:[0,0,1],back:[0,0,-1],left:[-1,0,0],right:[1,0,0],top:[0,1,0.000001],bottom:[0,-1,-0.000001],isometric:[1,1,1]};
+    this.camera.position.copy(this.orbit.target).add(new THREE.Vector3(...directions[view] as [number,number,number]).normalize().multiplyScalar(distance));
     this.orbit.update();
   }
   fit(center: THREE.Vector3, radius: number) {
@@ -126,20 +135,9 @@ export class ViewportNavigation {
     const offset = this.camera.position.clone().sub(this.orbit.target);
     if (code === "Home" || code === "NumpadDecimal") this.frame();
     else if (code === "Numpad5")
-      this.switchProjection(this.camera !== this.orthographic);
+      this.toggleProjection();
     else if (["Numpad1", "Numpad3", "Numpad7"].includes(code)) {
-      this.switchProjection(true);
-      const direction =
-        code === "Numpad1"
-          ? new THREE.Vector3(0, 0, 1)
-          : code === "Numpad3"
-            ? new THREE.Vector3(1, 0, 0)
-            : new THREE.Vector3(0, 1, 0.000001);
-      if (event.ctrlKey) direction.negate();
-      this.camera.position
-        .copy(this.orbit.target)
-        .add(direction.normalize().multiplyScalar(offset.length()));
-      this.orbit.update();
+      this.setView(code === "Numpad1" ? (event.ctrlKey ? "back":"front") : code === "Numpad3" ? (event.ctrlKey ? "left":"right") : (event.ctrlKey ? "bottom":"top"));
     } else if (code === "NumpadAdd" || code === "NumpadSubtract")
       this.zoom(code === "NumpadAdd" ? 1.2 : 1 / 1.2);
     else if (

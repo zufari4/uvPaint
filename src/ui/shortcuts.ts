@@ -5,11 +5,18 @@ import { invertSelection } from "../tools/selection";
 export function useShortcuts() {
   useEffect(() => {
     const handler = (ev: KeyboardEvent) => {
+      const target = ev.target as HTMLElement;
+      const historyKey = (ev.ctrlKey || ev.metaKey) && ["KeyZ", "KeyY"].includes(ev.code);
+      const textInput = target.closest('textarea,[contenteditable=true],input:not([type=checkbox]):not([type=range]):not([type=color]):not([type=button])');
+      if (ev.key === "Escape" && e.pickingLayerIsland) {
+        e.pickingLayerIsland = false;
+        e.emit();
+        ev.preventDefault();
+        return;
+      }
       if (
         ev.defaultPrevented ||
-        (ev.target as HTMLElement).closest(
-          "input,textarea,select,[contenteditable=true]",
-        ) ||
+        (target.closest("input,textarea,select,[contenteditable=true]") && (!historyKey || textInput)) ||
         document.querySelector(".modal-backdrop")
       )
         return;
@@ -67,7 +74,7 @@ export function useShortcuts() {
       }
       if (ev.key === "Delete") {
         ev.preventDefault();
-        e.clearPixels();
+        if (!ev.repeat) e.clearPixels();
         return;
       }
       if (ev.altKey) return;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dragTransform } from "../src/tools/free-transform";
+import { dragTransform, hitTransform } from "../src/tools/free-transform";
 const frame = [
   { x: 10, y: 20 },
   { x: 110, y: 20 },
@@ -7,10 +7,18 @@ const frame = [
   { x: 10, y: 70 },
 ];
 describe("Free transform gestures", () => {
-  it("snaps Ctrl movement to 8 texture pixels without changing the frame", () => {
+  it("rotates outside a rotated frame, moves inside and prioritizes handles", () => {
+    const diamond=[{x:0,y:50},{x:50,y:0},{x:100,y:50},{x:50,y:100}];
+    expect(hitTransform(diamond,{x:50,y:50},1,true).action).toBe("move");
+    expect(hitTransform(diamond,{x:5,y:5},1,true).action).toBe("rotate");
+    expect(hitTransform(diamond,{x:180,y:100},1,true).action).toBe("rotate");
+    expect(hitTransform(diamond,diamond[0],1,true).action).toBe("scale");
+    expect(hitTransform(diamond,diamond[0],1,true,true).action).toBe("distort");
+  });
+  it("snaps Ctrl movement to 10 texture pixels without changing the frame", () => {
     const start = { x: 60, y: 45 }, end = { x: 73, y: 34 };
     const moved = dragTransform(frame, start, end, { action: "move", handle: -1 }, false, false, true);
-    expect(moved).toEqual(frame.map(p => ({x: p.x + 16, y: p.y - 8})));
+    expect(moved).toEqual(frame.map(p => ({x: p.x + 10, y: p.y - 10})));
     const unsnapped = dragTransform(frame, start, end, { action: "move", handle: -1 }, false, false, false);
     expect(unsnapped[0]).toEqual({x: 23, y: 9});
   });

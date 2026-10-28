@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { sourceGeometry } from "../render/mesh-source";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { ModelAsset, TextureDocument, MaterialSlot } from "../types";
 import { canvas, context } from "../core/canvas";
@@ -253,5 +254,5 @@ export function disposeModel(model: ModelAsset) {
     slot.original.dispose();
   }
   for (const t of textures) t.dispose();
-  for (const part of model.parts) part.geometry.dispose();
+  for (const part of model.parts) sourceGeometry(part).dispose();
 }

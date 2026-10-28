@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, FolderOpen, Download, X } from "lucide-react";
+import { Box, X } from "lucide-react";
 import { useEditor } from "./hooks";
 import { useShortcuts } from "./shortcuts";
 import { Button } from "./Button";
 import { TextureCanvas } from "./TextureCanvas";
 import { Viewport } from "./Viewport";
 import { LayersPanel } from "./LayersPanel";
-import { UVPanel } from "./UVPanel";
 import { ToolRail } from "./ToolRail";
 import { SizeDialog, HelpDialog } from "./Dialogs";
 import { MaterialDialog } from "./MaterialDialog";
@@ -15,6 +14,8 @@ import { SettingsDialog } from "./SettingsDialog";
 import { WindowControls } from "./WindowControls";
 import { AppMenu } from "./AppMenu";
 import { AboutDialog } from "./AboutDialog";
+import { IslandMenu } from "./IslandMenu";
+import { ImageImportDialog } from "./ImageImportDialog";
 export function App() {
   const e = useEditor();
   useShortcuts();
@@ -30,13 +31,13 @@ export function App() {
     [split, setSplit] = useState(60);
   const workspace = useRef<HTMLDivElement>(null);
   const textureWorkspace = useRef<HTMLDivElement>(null);
-  const [inspectorHeight, setInspectorHeight] = useState(310);
-  const verticalDrag = useRef<{ y: number; height: number } | null>(null);
-  const resizeInspector = (height: number) =>
-    setInspectorHeight(
+  const [inspectorWidth, setInspectorWidth] = useState(300);
+  const inspectorDrag = useRef<{ x: number; width: number } | null>(null);
+  const resizeInspector = (width: number) =>
+    setInspectorWidth(
       Math.max(
-        160,
-        Math.min(height, (textureWorkspace.current?.clientHeight ?? 600) - 220),
+        220,
+        Math.min(width, (textureWorkspace.current?.clientWidth ?? 800) - 240),
       ),
     );
   const dragging = useRef(false);
@@ -65,22 +66,7 @@ export function App() {
           </strong>
         </div>
         <div className="header-actions">
-          <Button
-            title="Open GLB (Ctrl+O)"
-            disabled={e.busy}
-            onClick={() => void e.run(() => e.openModel())}
-          >
-            <FolderOpen size={16} /> Open GLB
-          </Button>
           <AppMenu onSelect={setDialog} />
-          <Button
-            className="primary export-button"
-            title="Export PNG (Ctrl+Shift+S)"
-            disabled={!e.doc || e.busy}
-            onClick={() => void e.run(() => e.export())}
-          >
-            <Download size={16} /> Export PNG
-          </Button>
           <WindowControls />
         </div>
       </header>
@@ -107,6 +93,12 @@ export function App() {
           {e.doc?.textureUsage ?? "Base Color"}{" "}
           <span className="muted">+ Alpha</span>
         </span>
+        {e.model && <select aria-label="UV set" title="Texture UV map"
+          value={e.doc?.uvSet ?? "uv"} onChange={ev => e.selectUVSet(ev.target.value)}>
+          {e.model.slots.find(s => s.id === e.activeId)?.uvSets.map(uv => <option key={uv} value={uv}>
+            {e.doc?.uvNames?.[uv] || e.model?.slots.find(s => s.id === e.activeId)?.uvLabels[uv] || uv}
+          </option>)}
+        </select>}
         {e.model?.slots.find((s) => s.id === e.activeId)?.documents.length! >
           1 && (
           <select
@@ -131,13 +123,6 @@ export function App() {
           Material settings
         </Button>
         <div className="spacer" />
-        <span className="session-note">
-          {e.model
-            ? `${e.model.slots.length} materials · ${e.model.parts.length} meshes`
-            : "LOCAL WORKSPACE"}
-          <span className="muted"> / </span>{" "}
-          {e.doc ? "Unsaved session" : "Ready to create"}
-        </span>
       </div>
       <main className="workspace" ref={workspace}>
         <div className="editor-workspace" style={{ width: `${split}%` }}>
@@ -145,48 +130,47 @@ export function App() {
           <div className="texture-workspace" ref={textureWorkspace}>
             <TextureCanvas />
             <div
-              className="horizontal-splitter"
+              className="layers-splitter"
               role="separator"
               aria-label="Resize canvas and layers panels"
-              aria-orientation="horizontal"
-              aria-valuenow={inspectorHeight}
+              aria-orientation="vertical"
+              aria-valuenow={inspectorWidth}
               tabIndex={0}
               onKeyDown={(event) => {
-                if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
                   event.preventDefault();
                   resizeInspector(
-                    inspectorHeight + (event.key === "ArrowUp" ? 16 : -16),
+                    inspectorWidth + (event.key === "ArrowLeft" ? 16 : -16),
                   );
                 }
               }}
               onPointerDown={(event) => {
-                verticalDrag.current = {
-                  y: event.clientY,
-                  height: inspectorHeight,
+                inspectorDrag.current = {
+                  x: event.clientX,
+                  width: inspectorWidth,
                 };
                 event.currentTarget.setPointerCapture(event.pointerId);
               }}
               onPointerMove={(event) => {
-                if (verticalDrag.current)
+                if (inspectorDrag.current)
                   resizeInspector(
-                    verticalDrag.current.height +
-                      verticalDrag.current.y -
-                      event.clientY,
+                    inspectorDrag.current.width +
+                      inspectorDrag.current.x -
+                      event.clientX,
                   );
               }}
               onPointerUp={() => {
-                verticalDrag.current = null;
+                inspectorDrag.current = null;
               }}
               onPointerCancel={() => {
-                verticalDrag.current = null;
+                inspectorDrag.current = null;
               }}
             />
             <div
-              className="inspector"
-              style={{ height: inspectorHeight, minHeight: 160 }}
+              className="inspector layers-sidebar"
+              style={{ width: inspectorWidth }}
             >
               <LayersPanel />
-              <UVPanel />
             </div>
           </div>
         </div>
@@ -222,6 +206,8 @@ export function App() {
         <Viewport />
       </main>
       <Notice />
+      {e.imageImport && <ImageImportDialog key={e.imageImport.id} source={e.imageImport} />}
+      {e.islandMenu && <IslandMenu />}
       {e.error && (
         <div className="error-toast" role="alert">
           <div>

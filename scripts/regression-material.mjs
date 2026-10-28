@@ -122,6 +122,17 @@ try {
     ok(e.output.toDataURL() === before, "Alpha transfer is undoable");
     e.redo();
     ok(pixel(e.output, 48, 16)[3] === 0, "Alpha transfer is redoable");
+    const transferred = e.output.toDataURL();
+    e.undo();
+    e.doc.selectedIslands = e.doc.islands.map(island => island.id);
+    e.setIslandVisibility("except");
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    ok(e.model.parts.some(part => part.geometry.index?.count === 0), "Hidden preview uses a separate face index");
+    e.transferMaterialAlpha(index, "uv");
+    ok(e.output.toDataURL() === transferred, "Hidden preview faces do not affect alpha reprojection or output pixels");
+    e.setIslandVisibility("all");
+    e.doc.selectedIslands = [];
     e.change("Opaque", (d) => {
       d.alphaMode = "OPAQUE";
     });

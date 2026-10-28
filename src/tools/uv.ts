@@ -1,5 +1,7 @@
 import * as THREE from "three";
-import type { Island, Point, TextureDocument } from "../types";
+import type { Island, IslandFace, Point, TextureDocument } from "../types";
+import { sourceGeometry } from "../render/mesh-source";
+import { guideEdges } from "./uv-guides";
 import { canvas, context, cloneCanvas } from "../core/canvas";
 export function extractIslands(
   scene: THREE.Object3D,
@@ -8,11 +10,12 @@ export function extractIslands(
   textureOverride?: THREE.Texture | null,
 ): Island[] {
   const triangles: Point[][] = [];
+  const faces: IslandFace[] = [];
   const edges = new Map<string, number[]>();
   const vertex = (p: Point) => `${p.x.toFixed(6)},${p.y.toFixed(6)}`;
   scene.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return;
-    const g = obj.geometry as THREE.BufferGeometry;
+    const g = sourceGeometry(obj);
     const uv = g.getAttribute(uvSet),
       position = g.getAttribute("position");
     if (!uv) return;
@@ -52,6 +55,9 @@ export function extractIslands(
         });
         const id = triangles.length;
         triangles.push(tri);
+        const xyz = [0, 1, 2].map(n => new THREE.Vector3().fromBufferAttribute(position, index ? index.getX(i+n) : i+n));
+        const normal = xyz[1].clone().sub(xyz[0]).cross(xyz[2].clone().sub(xyz[0])).normalize();
+        faces.push({meshId: obj.uuid, triangle: i/3, vertices: keys, normal: normal.toArray() as [number,number,number]});
         for (let edge = 0; edge < 3; edge++) {
           const key = [keys[edge], keys[(edge + 1) % 3]].sort().join("|");
           const list = edges.get(key) ?? [];
@@ -71,14 +77,18 @@ export function extractIslands(
   };
   for (const list of edges.values())
     for (let i = 1; i < list.length; i++) parent[find(list[i])] = find(list[0]);
-  const groups = new Map<number, Point[][]>();
-  triangles.forEach((t, i) => {
+  const groups = new Map<number, number[]>();
+  triangles.forEach((_, i) => {
     const root = find(i);
     const list = groups.get(root) ?? [];
-    list.push(t);
+    list.push(i);
     groups.set(root, list);
   });
-  return [...groups.values()].map((t, id) => ({ id, triangles: t }));
+  return [...groups.values()].map((indices, id) => {
+    const island = {id, triangles: indices.map(i => triangles[i]), faces: indices.map(i => faces[i])};
+    guideEdges(island);
+    return island;
+  });
 }
 export function traceIslands(
   ctx: CanvasRenderingContext2D,
@@ -119,8 +129,9 @@ export function islandMask(doc: TextureDocument) {
 export function editingMask(doc: TextureDocument, includeSelection = true) {
   let mask =
     includeSelection && doc.selection ? cloneCanvas(doc.selection) : null;
-  if (doc.restrict) {
-    const uv = islandMask(doc);
+  const layer = doc.layers.find(l => l.id === doc.activeId);
+  if (layer?.uvBinding || doc.restrict) {
+    const uv = layer?.uvBinding && layer.uvMask ? layer.uvMask : islandMask(doc);
     if (mask) {
       const ctx = context(mask);
       ctx.globalCompositeOperation = "destination-in";

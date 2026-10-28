@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { ModelAsset, TextureDocument, SourceTexture } from "../types";
 import { canvas, context } from "../core/canvas";
 import type { WarpRenderer } from "../render/warp";
+import { sourceGeometry } from "../render/mesh-source";
 // Reprojects the source alpha through geometry: target UVs determine pixel positions,
 // while the source's own UV set determines sampling. It never multiplies AO into RGB.
 export function transferAlpha(
@@ -18,7 +19,7 @@ export function transferAlpha(
   source.texture.updateMatrix();
   targetMap.updateMatrix();
   for (const mesh of model.parts) {
-    const geometry = mesh.geometry as THREE.BufferGeometry;
+    const geometry = sourceGeometry(mesh);
     const src = geometry.getAttribute(sourceUV),
       dst = geometry.getAttribute(doc.uvSet);
     const multiple = Array.isArray(mesh.material),

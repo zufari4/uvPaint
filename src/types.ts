@@ -15,6 +15,8 @@ export type Layer = {
   blend: Blend;
   canvas: HTMLCanvasElement;
   uvMask?: HTMLCanvasElement | null;
+  // Immutable source island and UV channel; preview visibility never changes this mask.
+  uvBinding?: { uvSet: string; island: Island };
   placement?: {
     source: HTMLCanvasElement;
     rest: HTMLCanvasElement;
@@ -23,7 +25,14 @@ export type Layer = {
     rendered: HTMLCanvasElement;
   };
 };
-export type Island = { id: number; triangles: Point[][] };
+export type UVDisplayMode = "off" | "quads" | "triangles" | "outline";
+export type IslandFace = {
+  meshId: string;
+  triangle: number;
+  vertices: string[];
+  normal: [number, number, number];
+};
+export type Island = { id: number; triangles: Point[][]; faces?: IslandFace[] };
 export type AlphaMode = "OPAQUE" | "MASK" | "BLEND";
 export type SourceTexture = {
   name: string;
@@ -92,6 +101,8 @@ export type TransformSession = {
   layerId: string;
   clip: HTMLCanvasElement | null;
   outside?: HTMLCanvasElement;
+  raster?: HTMLCanvasElement;
+  warped?: HTMLCanvasElement;
 };
 declare global {
   interface Window {

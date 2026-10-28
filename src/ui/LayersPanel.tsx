@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   Layers,
   Eye,
@@ -10,11 +10,12 @@ import {
   ArrowDown,
   Merge,
   ImagePlus,
+  Pipette,
 } from "lucide-react";
 import type { Layer, Blend } from "../types";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
-function Thumbnail({ layer }: { layer: Layer }) {
+function Thumbnail({ layer, refresh }: { layer: Layer; refresh: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current!,
@@ -28,13 +29,19 @@ function Thumbnail({ layer }: { layer: Layer }) {
       layer.canvas.width * s,
       layer.canvas.height * s,
     );
-  }, [layer.canvas]);
+  }, [layer.canvas, refresh]);
   return <canvas className="layer-thumb" ref={ref} width="44" height="36" />;
 }
 export function LayersPanel() {
   const e = useEditor(),
     d = e.doc,
     l = e.layer;
+  const islandOptions = useMemo(() => {
+    const visible = new Set(e.visibleIslands.map(i => i.id));
+    return d?.islands.map(island => <option key={island.id} value={`${d.uvSet}:${island.id}`}>
+      Island {String(island.id + 1).padStart(2, "0")}{visible.has(island.id) ? "" : " · Hidden"}
+    </option>);
+  }, [d?.islands, d?.uvSet, e.hiddenFaces]);
   return (
     <div className="layers-panel">
       <div className="section-heading">
@@ -42,19 +49,8 @@ export function LayersPanel() {
           <Layers size={14} /> LAYERS <b>{d?.layers.length ?? 0}</b>
         </span>
         <div className="mini-actions">
-          <Button
-            title="New empty layer"
-            disabled={!d}
-            onClick={() => e.addEmpty()}
-          >
-            <Plus size={15} />
-          </Button>
-          <Button
-            title="Import image layer"
-            disabled={!d}
-            onClick={() => void e.run(() => e.openImage())}
-          >
-            <ImagePlus size={15} />
+          <Button title="Merge down" disabled={!l || d?.layers[0] === l} onClick={() => e.mergeDown()}>
+            <Merge size={15} />
           </Button>
         </div>
       </div>
@@ -102,6 +98,25 @@ export function LayersPanel() {
           <span>%</span>
         </label>
       </div>
+      <div className="layer-island-binding">
+        <label htmlFor="layer-island">UV island</label>
+        <select id="layer-island" aria-label="Layer UV island"
+          disabled={!l || (!d?.islands.length && !l.uvBinding)}
+          value={l?.uvBinding ? `${l.uvBinding.uvSet}:${l.uvBinding.island.id}` : ""}
+          onChange={ev => e.setLayerIsland(ev.target.value ? Number(ev.target.value.split(":")[1]) : null)}>
+          <option value="">No linked island</option>
+          {l?.uvBinding && l.uvBinding.uvSet !== d?.uvSet && (
+            <option value={`${l.uvBinding.uvSet}:${l.uvBinding.island.id}`} disabled>
+              Island {String(l.uvBinding.island.id + 1).padStart(2, "0")} · {l.uvBinding.uvSet}
+            </option>
+          )}
+          {islandOptions}
+        </select>
+        <Button title={e.pickingLayerIsland ? "Cancel picking UV island (Escape)" : "Pick UV island from canvas or model"}
+          disabled={!l || !d?.islands.length} aria-pressed={e.pickingLayerIsland}
+          onClick={() => e.toggleIslandPicker()}><Pipette size={16} /></Button>
+        {e.pickingLayerIsland && <span role="status">Click an island in 2D or 3D · Esc to cancel</span>}
+      </div>
       <div className="layer-list">
         {d?.layers
           .slice()
@@ -121,7 +136,7 @@ export function LayersPanel() {
               >
                 {layer.visible ? <Eye size={14} /> : <EyeOff size={14} />}
               </Button>
-              <Thumbnail layer={layer} />
+              <Thumbnail layer={layer} refresh={e.transform ? 0 : e.pixelsRevision} />
               <input
                 aria-label={`Layer name ${layer.name}`}
                 key={layer.name}
@@ -139,6 +154,9 @@ export function LayersPanel() {
                 }}
               />
               <small>{Math.round(layer.opacity * 100)}%</small>
+              {layer.uvBinding && <small className="layer-island-label" title={`Linked UV: ${layer.uvBinding.uvSet}`}>
+                Island {String(layer.uvBinding.island.id + 1).padStart(2, "0")}
+              </small>}
             </div>
           ))}
         {!d?.layers.length && (
@@ -146,6 +164,8 @@ export function LayersPanel() {
         )}
       </div>
       <div className="layer-footer">
+        <Button title="New empty layer" disabled={!d} onClick={() => e.addEmpty()}><Plus size={15} /></Button>
+        <Button title="Import image layer" disabled={e.busy} onClick={() => void e.run(() => e.openImage())}><ImagePlus size={15} /></Button>
         <Button
           title="Duplicate layer"
           disabled={!l}
@@ -166,13 +186,6 @@ export function LayersPanel() {
           onClick={() => e.reorder(-1)}
         >
           <ArrowDown size={14} />
-        </Button>
-        <Button
-          title="Merge down"
-          disabled={!l || d?.layers[0] === l}
-          onClick={() => e.mergeDown()}
-        >
-          <Merge size={15} />
         </Button>
         <div className="spacer" />
         <Button

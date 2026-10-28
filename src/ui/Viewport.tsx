@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { ViewportNavigation } from "./viewportNavigation";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
@@ -6,7 +6,10 @@ import { Box, Maximize } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
 import { ModelPartsMenu } from "./ModelPartsMenu";
+import { ViewCube } from "./ViewCube";
+import { IslandPreview } from "../render/island-preview";
 export function Viewport() {
+  const [navigationState,setNavigationState]=useState<ViewportNavigation|null>(null);
   const e = useEditor(),
     host = useRef<HTMLDivElement>(null),
     fitRef = useRef<() => void>(() => {});
@@ -33,6 +36,7 @@ export function Viewport() {
     const navigation = new ViewportNavigation(renderer.domElement, () =>
       fitRef.current(),
     );
+    setNavigationState(navigation);
     const model = e.model;
     if (model) scene.add(model.scene);
     const pmrem = new THREE.PMREMGenerator(renderer),
@@ -46,7 +50,7 @@ export function Viewport() {
     scene.add(light);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    const edgeObjects: THREE.LineSegments[] = [];
+    const islands=new IslandPreview(model?.parts ?? []);
     const box = model
       ? new THREE.Box3().setFromObject(model.scene)
       : new THREE.Box3(
@@ -86,18 +90,6 @@ export function Viewport() {
       for (const part of model.parts) {
         part.castShadow = true;
         part.receiveShadow = true;
-        const edges = new THREE.LineSegments(
-          new THREE.EdgesGeometry(part.geometry, 25),
-          new THREE.LineBasicMaterial({
-            color: 0x9fd5ca,
-            transparent: true,
-            opacity: 0.5,
-            depthWrite: false,
-          }),
-        );
-        edges.userData.uvPaintEdges = true;
-        part.add(edges);
-        edgeObjects.push(edges);
       }
     }
     let lastMode = "";
@@ -141,20 +133,65 @@ export function Viewport() {
               : swap(part.material);
           }
       }
-      for (const edges of edgeObjects) edges.visible = e.previewEdges;
+      islands.sync(e.hiddenFaces,e.selectedFaces,e.previewEdges);
       navigation.orbit.update();
       renderer.render(scene, navigation.camera);
     };
     animate();
+    const hitUVIsland=(event:MouseEvent, switchMaterial:boolean, selectLayer=false)=>{
+      let islandId=-1;
+      if(model){
+        const r=renderer.domElement.getBoundingClientRect();
+        const ray=new THREE.Raycaster();
+        ray.setFromCamera(new THREE.Vector2((event.clientX-r.left)/r.width*2-1,1-(event.clientY-r.top)/r.height*2),navigation.camera);
+        const hit=ray.intersectObjects(model.parts.filter(p=>p.visible),false)[0];
+        if(hit?.faceIndex!==undefined && hit.faceIndex!==null){
+          const part=hit.object as THREE.Mesh, face=islands.originalFace(part,hit.faceIndex);
+          const mat=Array.isArray(part.material)?part.material[hit.face?.materialIndex??0]:part.material;
+          if(mat.userData.slotId && e.activeId!==mat.userData.slotId) {
+            if (!switchMaterial) return -1;
+            e.selectMaterial(mat.userData.slotId);
+          }
+          islandId=e.doc?.islands.find(i=>i.faces?.some(f=>f.meshId===part.uuid&&f.triangle===face))?.id ?? -1;
+          if (selectLayer && face !== undefined) e.selectModelFace(part.uuid, face, event.shiftKey);
+        }
+      }
+      return islandId;
+    };
+    const contextMenu=(event:MouseEvent)=>{
+      event.preventDefault();
+      const islandId=hitUVIsland(event, !e.pickingLayerIsland);
+      e.openIslandMenu(event.clientX,event.clientY,islandId);
+    };
+    let clickStart: { x: number; y: number; pointerId: number } | null = null;
+    const pickIsland=(event:PointerEvent)=>{
+      clickStart = null;
+      if (event.button !== 0) return;
+      if (!e.pickingLayerIsland) { clickStart={ x:event.clientX, y:event.clientY, pointerId:event.pointerId };return; }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      e.pickLayerIsland(hitUVIsland(event, false));
+    };
+    const selectIsland=(event:PointerEvent)=>{
+      const start=clickStart;clickStart=null;
+      if (!start || event.pointerId !== start.pointerId || event.button !== 0 || e.pickingLayerIsland ||
+        Math.hypot(event.clientX-start.x,event.clientY-start.y)>4) return;
+      hitUVIsland(event,true,true);
+    };
+    const cancelClick=()=>{clickStart=null;};
+    renderer.domElement.addEventListener("pointerdown",pickIsland,true);
+    renderer.domElement.addEventListener("pointerup",selectIsland);
+    renderer.domElement.addEventListener("pointercancel",cancelClick);
+    renderer.domElement.addEventListener("contextmenu",contextMenu);
     return () => {
       cancelAnimationFrame(frame);
       resize.disconnect();
       navigation.dispose();
-      for (const edges of edgeObjects) {
-        edges.removeFromParent();
-        edges.geometry.dispose();
-        (edges.material as THREE.Material).dispose();
-      }
+      renderer.domElement.removeEventListener("contextmenu",contextMenu);
+      renderer.domElement.removeEventListener("pointerdown",pickIsland,true);
+      renderer.domElement.removeEventListener("pointerup",selectIsland);
+      renderer.domElement.removeEventListener("pointercancel",cancelClick);
+      islands.dispose();
       ground.geometry.dispose();
       ground.material.dispose();
       environment.dispose();
@@ -199,7 +236,7 @@ export function Viewport() {
           </Button>
         </div>
       </div>
-      <div className="preview-stage">
+      <div className={`preview-stage ${e.pickingLayerIsland ? "picking-island" : ""}`}>
         <div className="preview-renderer" ref={host} />
         {!e.model && (
           <div className="preview-empty">
@@ -213,12 +250,7 @@ export function Viewport() {
             <span>NO LIGHTING · TRUE BASE COLOR</span>
           </div>
         )}
-        <div className="viewport-axis">
-          <b className="axis-y">Y</b>
-          <b className="axis-x">X</b>
-          <b className="axis-z">Z</b>
-          <i />
-        </div>
+        <ViewCube navigation={navigationState} />
         {e.model && (
           <div className="model-title">
             <span className="live-dot" />

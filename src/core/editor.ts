@@ -6,12 +6,14 @@ import type {
   TextureDocument,
   Tool,
   TransformSession,
+  UVDisplayMode,
+  Island,
 } from "../types";
 import { canvas, context, cloneCanvas, masked, alphaBounds } from "./canvas";
 import { History, snapshot } from "./history";
 import { composite } from "../render/composite";
 import { WarpRenderer } from "../render/warp";
-import { editingMask, extractIslands } from "../tools/uv";
+import { editingMask, extractIslands, islandMask, hitIsland } from "../tools/uv";
 import {
   combineSelection,
   invertSelection,
@@ -24,6 +26,8 @@ import { exportPNG } from "../export/png";
 import { syncMaterial } from "../render/material";
 import { transferAlpha } from "../tools/alpha-transfer";
 import { loadPreferences, preferenceKey } from "./preferences";
+import { faceKey } from "../tools/uv-guides";
+import { sourceGeometry } from "../render/mesh-source";
 
 export class Editor {
   docs = new Map<string, TextureDocument>();
@@ -39,13 +43,24 @@ export class Editor {
   brushOpacity = 1;
   tolerance = 24;
   contiguous = true;
-  uvVisible = true;
+  uvDisplay: UVDisplayMode = "off";
+  hiddenFaces = new Set<string>();
+  islandMenu: {x:number; y:number} | null = null;
+  pickingLayerIsland = false;
+  imageImport: { id: string; image: HTMLCanvasElement; name: string } | null = null;
+  private finishImageImport: (() => void) | null = null;
+  private visibleCache: {islands:Island[]; hidden:Set<string>; result:Island[]} | null = null;
+  private selectedCache: {islands:Island[]; ids:string; result:Set<string>} | null = null;
   uvColor = "#a5ece0";
   uvOpacity = 0.65;
-  textScale = 1.6;
+  textScale = 1.4;
   previewMode: "unlit" | "studio" = "studio";
   previewEdges = false;
   transform: TransformSession | null = null;
+  private transformFrame = 0;
+  private pendingTransform: { session: TransformSession; points: Point[] } | null = null;
+  private dragPreview: HTMLCanvasElement | null = null;
+  private reducedPreview = false;
   cloneSource: Point | null = null;
   message = "Open a GLB to start, or create a texture.";
   notice: { id: number; text: string } | null = null;
@@ -62,6 +77,42 @@ export class Editor {
     this.uvColor = preferences.uvColor;
     this.uvOpacity = preferences.uvOpacity;
     this.textScale = preferences.textScale;
+    this.uvDisplay = preferences.uvDisplay;
+  }
+  setUVDisplay(mode: UVDisplayMode) { this.uvDisplay = mode; this.savePreferences(); }
+  get visibleIslands(): Island[] {
+    const islands = this.doc?.islands;
+    if (!islands) return [];
+    if (this.visibleCache?.islands === islands && this.visibleCache.hidden === this.hiddenFaces) return this.visibleCache.result;
+    const result = islands.map(island => {
+      if (!island.faces) return island;
+      const indices = island.faces.map((f,i)=>this.hiddenFaces.has(faceKey(f)) ? -1 : i).filter(i=>i>=0);
+      if (indices.length === island.triangles.length) return island;
+      return {...island, triangles: indices.map(i=>island.triangles[i]), faces: indices.map(i=>island.faces![i])};
+    }).filter(i=>i.triangles.length);
+    this.visibleCache={islands,hidden:this.hiddenFaces,result};
+    return result;
+  }
+  get selectedFaces() {
+    const islands=this.doc?.islands ?? [], ids=this.doc?.selectedIslands.join(",") ?? "";
+    if(this.selectedCache?.islands===islands && this.selectedCache.ids===ids)return this.selectedCache.result;
+    const result=new Set(islands.filter(i=>this.doc!.selectedIslands.includes(i.id)).flatMap(i=>i.faces?.map(faceKey) ?? []));
+    this.selectedCache={islands,ids,result};return result;
+  }
+  openIslandMenu(x:number,y:number,id=-1) {
+    if (id>=0 && !this.doc?.selectedIslands.includes(id)) this.selectIsland(id);
+    this.islandMenu={x,y}; this.emit();
+  }
+  setIslandVisibility(action: "isolate" | "all" | "except") {
+    const selected = this.selectedFaces;
+    if (action !== "all" && !selected.size) return;
+    const hidden = new Set<string>();
+    if (action === "except") selected.forEach(key=>hidden.add(key));
+    if (action === "isolate") for (const part of this.model?.parts ?? []) {
+      const g=sourceGeometry(part), count=(g.index?.count ?? g.getAttribute("position").count)/3;
+      for(let i=0;i<count;i++) {const key=faceKey({meshId:part.uuid,triangle:i});if(!selected.has(key))hidden.add(key);}
+    }
+    this.hiddenFaces=hidden; this.islandMenu=null; this.emit();
   }
   setUVAppearance(patch: { uvColor?: string; uvOpacity?: number }) {
     if (patch.uvColor !== undefined && /^#[0-9a-f]{6}$/i.test(patch.uvColor))
@@ -83,6 +134,7 @@ export class Editor {
           uvColor: this.uvColor,
           uvOpacity: this.uvOpacity,
           textScale: this.textScale,
+          uvDisplay: this.uvDisplay,
         }),
       );
     } catch {
@@ -118,13 +170,26 @@ export class Editor {
   get warp() {
     return this.warpInstance ?? (this.warpInstance = new WarpRenderer());
   }
-  emit(pixels = false) {
+  emit(pixels = false, interactive = false) {
     if (pixels && this.doc) {
       this.pixelsRevision++;
       this.output = composite(this.doc, this.output ?? undefined);
       const slot = this.model?.slots.find((s) => s.id === this.activeId);
       if (slot) {
-        syncMaterial(slot, this.doc, this.output);
+        let preview = this.output;
+        const scale = Math.min(1, 512 / Math.max(preview.width, preview.height));
+        this.reducedPreview = interactive && scale < 1;
+        if (this.reducedPreview) {
+          const width = Math.max(1, Math.round(preview.width * scale));
+          const height = Math.max(1, Math.round(preview.height * scale));
+          if (!this.dragPreview || this.dragPreview.width !== width || this.dragPreview.height !== height)
+            this.dragPreview = canvas(width, height, false);
+          const ctx = context(this.dragPreview);
+          ctx.clearRect(0, 0, width, height);
+          ctx.drawImage(preview, 0, 0, width, height);
+          preview = this.dragPreview;
+        }
+        syncMaterial(slot, this.doc, preview);
       }
     }
     this.revision++;
@@ -182,6 +247,9 @@ export class Editor {
   install({ model, docs }: { model: ModelAsset; docs: TextureDocument[] }) {
     if (this.model) disposeModel(this.model);
     this.model = model;
+    this.hiddenFaces = new Set();
+    this.islandMenu = null;
+    this.pickingLayerIsland = false;
     this.docs.clear();
     this.textureDocuments.clear();
     this.histories.clear();
@@ -233,6 +301,7 @@ export class Editor {
     }
   }
   selectMaterial(id: string) {
+    this.pickingLayerIsland = false;
     this.confirmTransform();
     this.activeId = id;
     this.output = null;
@@ -240,6 +309,7 @@ export class Editor {
     this.emit(true);
   }
   selectTexture(sourceIndex: number) {
+    this.pickingLayerIsland = false;
     const slot = this.model?.slots.find((s) => s.id === this.activeId);
     if (!slot || !this.doc) return;
     const template = slot.documents.find(
@@ -260,6 +330,7 @@ export class Editor {
   }
   change(label: string, fn: (d: TextureDocument) => void) {
     if (!this.doc) return;
+    this.pickingLayerIsland = false;
     this.confirmTransform();
     const before = snapshot(this.doc);
     const next = snapshot(this.doc);
@@ -291,19 +362,71 @@ export class Editor {
   }
   async openImage() {
     const file = await pickFile("image");
-    if (file) await this.importImage(file.bytes, file.name);
+    if (file) await this.requestImageImport(file.bytes, file.name);
+  }
+  async requestImageImport(bytes: Uint8Array, name: string) {
+    if (this.imageImport) return;
+    const image = await decodeImage(bytes);
+    await this.checkSize(image.width, image.height);
+    this.pickingLayerIsland = false;
+    this.islandMenu = null;
+    await new Promise<void>(resolve => {
+      this.finishImageImport = resolve;
+      this.imageImport = { id: crypto.randomUUID(), image, name };
+      this.emit();
+    });
+  }
+  cancelImageImport() {
+    this.imageImport = null;
+    const finish = this.finishImageImport;
+    this.finishImageImport = null;
+    this.emit();
+    finish?.();
+  }
+  async acceptImageImport(mask: HTMLCanvasElement | null, targetLayerId: string | null) {
+    const pending = this.imageImport;
+    if (!pending) return;
+    let image = pending.image;
+    if (mask) {
+      const bounds = alphaBounds(mask);
+      if (!bounds) throw new Error("Select an area or choose Whole image.");
+      const selected = masked(image, mask);
+      image = canvas(bounds.width, bounds.height);
+      context(image).drawImage(selected, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
+    }
+    await this.importPreparedImage(image, pending.name, targetLayerId);
+    this.cancelImageImport();
   }
   async importImage(bytes: Uint8Array, name: string) {
     const image = await decodeImage(bytes);
     await this.checkSize(image.width, image.height);
+    await this.importPreparedImage(image, name);
+  }
+  private async importPreparedImage(image: HTMLCanvasElement, name: string, targetLayerId: string | null = null) {
+    if (targetLayerId && !this.doc?.layers.some(layer => layer.id === targetLayerId))
+      throw new Error("The target layer is no longer available.");
     if (!this.doc) await this.newCanvas(image.width, image.height);
+    this.confirmTransform();
+    const targetMask = targetLayerId ? this.doc!.layers.find(layer => layer.id === targetLayerId)!.uvMask ?? null : null;
+    let rest = canvas(this.doc!.width, this.doc!.height);
     this.change("Import image", (d) => {
       const c = canvas(d.width, d.height);
       const ctx = context(c);
+      const target = d.layers.find(layer => layer.id === targetLayerId);
+      if (target) {
+        rest = target.canvas;
+        ctx.drawImage(rest, 0, 0);
+      }
       ctx.drawImage(image, 0, 0);
-      const l = this.makeLayer(c, name);
-      l.uvMask = editingMask(d, false);
-      d.layers.push(l);
+      const l = target ?? this.makeLayer(c, name);
+      if (!target) {
+        l.uvBinding = d.layers.find(layer => layer.id === d.activeId)?.uvBinding;
+        l.uvMask = editingMask(d, false);
+        d.layers.push(l);
+      } else {
+        l.canvas = c;
+        l.placement = undefined;
+      }
       d.activeId = l.id;
       d.selection = null;
     });
@@ -317,12 +440,12 @@ export class Editor {
     this.transform = {
       kind: "free",
       source: image,
-      rest: canvas(d.width, d.height),
+      rest,
       points,
       original: points.map((p) => ({ ...p })),
       before: snapshot(d),
       layerId: d.activeId,
-      clip: editingMask(d, false),
+      clip: targetLayerId ? targetMask : editingMask(d, false),
     };
     this.tool = "move";
     this.updateTransform(points);
@@ -336,9 +459,41 @@ export class Editor {
     });
   }
   selectLayer(id: string) {
+    this.pickingLayerIsland = false;
     this.confirmTransform();
-    if (this.doc) this.doc.activeId = id;
+    if (this.doc) {
+      this.doc.activeId = id;
+      const binding = this.layer?.uvBinding;
+      this.doc.selectedIslands = binding?.uvSet === this.doc.uvSet ? [binding.island.id] : [];
+    }
     this.emit();
+  }
+  setLayerIsland(id: number | null) {
+    if (!this.doc || !this.layer) return;
+    const island = this.doc.islands.find(i => i.id === id);
+    if (id !== null && !island) return;
+    this.pickingLayerIsland = false;
+    this.change("Link layer to UV island", d => {
+      const layer = d.layers.find(l => l.id === d.activeId)!;
+      layer.uvBinding = island ? { uvSet: d.uvSet, island } : undefined;
+      layer.uvMask = island
+        ? islandMask({ ...d, islands: [island], selectedIslands: [] })
+        : d.restrict ? islandMask({ ...d, selectedIslands: [] }) : null;
+      d.selectedIslands = island ? [island.id] : [];
+    });
+  }
+  toggleIslandPicker() {
+    if (!this.layer || !this.doc?.islands.length) return;
+    this.confirmTransform();
+    this.pickingLayerIsland = !this.pickingLayerIsland;
+    this.emit();
+  }
+  pickLayerIsland(id: number) {
+    if (id < 0) {
+      this.notify("Choose a UV island of the active material. Escape cancels picking.");
+      return;
+    }
+    this.setLayerIsland(id);
   }
   duplicateLayer() {
     const l = this.layer;
@@ -378,6 +533,7 @@ export class Editor {
         name: lower.name + " + " + upper.name,
         canvas: merged,
         uvMask: null,
+        uvBinding: undefined,
         placement: undefined,
         opacity: 1,
         blend: "source-over",
@@ -390,6 +546,7 @@ export class Editor {
     );
   }
   undo() {
+    if (this.pickingLayerIsland) { this.pickingLayerIsland = false; this.emit(); }
     if (this.transform) {
       this.cancelTransform();
       return;
@@ -402,6 +559,7 @@ export class Editor {
     }
   }
   redo() {
+    if (this.pickingLayerIsland) { this.pickingLayerIsland = false; this.emit(); }
     if (!this.doc || this.transform) return;
     const d = this.history.redo(this.doc);
     if (d) {
@@ -425,8 +583,9 @@ export class Editor {
     });
   }
   copy(cut = false, extract = false) {
+    this.confirmTransform();
     if (!this.doc || !this.layer) return;
-    const mask = editingMask(this.doc);
+    const mask = this.doc.selection;
     this.clipboard = masked(this.layer.canvas, mask);
     if (cut || extract)
       this.change(extract ? "Extract fragment" : "Cut", (d) => {
@@ -436,6 +595,8 @@ export class Editor {
           : canvas(d.width, d.height);
         if (extract) {
           const added = this.makeLayer(this.clipboard!, l.name + " fragment");
+          added.uvMask = l.uvMask ?? editingMask(d, false);
+          added.uvBinding = l.uvBinding;
           d.layers.push(added);
           d.activeId = added.id;
           d.selection = null;
@@ -455,6 +616,7 @@ export class Editor {
       const c = canvas(d.width, d.height);
       context(c).drawImage(this.clipboard!, 0, 0);
       const l = this.makeLayer(c, "Pasted fragment");
+      l.uvBinding = d.layers.find(layer => layer.id === d.activeId)?.uvBinding;
       l.uvMask = editingMask(d, false);
       d.layers.push(l);
       d.activeId = l.id;
@@ -463,6 +625,9 @@ export class Editor {
   }
   clearPixels() {
     if (!this.doc || !this.layer) return;
+    this.confirmTransform();
+    // Repeated Delete must not bury the actual deletion under empty history entries.
+    if (!alphaBounds(masked(this.layer!.canvas, this.doc!.selection))) return;
     this.change("Clear pixels", (d) => {
       const l = d.layers.find((l) => l.id === d.activeId)!;
       // Clearing a selection must also remove imported pixels outside UV islands.
@@ -480,16 +645,29 @@ export class Editor {
       );
   }
   fill(p: Point) {
-    if (!this.layer || !this.doc) return;
-    const area = floodMask(
-      this.layer.canvas,
-      p.x,
-      p.y,
-      this.tolerance,
-      this.contiguous,
-    );
-    const mask = editingMask(this.doc);
+    if (!this.layer || !this.doc || this.brushOpacity === 0) return;
+    const doc = this.doc, binding = this.layer.uvBinding;
+    if (p.x < 0 || p.y < 0 || p.x >= doc.width || p.y >= doc.height) return;
+    if (binding && this.layer.uvMask && !context(this.layer.uvMask).getImageData(Math.floor(p.x), Math.floor(p.y), 1, 1).data[3]) return;
+    let area: HTMLCanvasElement;
+    if (doc.islands.length) {
+      // Prefer the bound surface when separate surfaces have overlapping UVs.
+      const islands = binding?.uvSet === doc.uvSet
+        ? [binding.island, ...doc.islands.filter(i => i.id !== binding.island.id)]
+        : doc.islands;
+      const id = hitIsland({ ...doc, islands }, p);
+      const island = islands.find(i => i.id === id);
+      if (!island) return;
+      area = islandMask({ ...doc, islands: [island], selectedIslands: [] });
+    } else {
+      // A standalone image without UVs retains ordinary color-based bucket fill.
+      if (this.model || doc.restrict || binding) return;
+      area = floodMask(this.layer.canvas, p.x, p.y, this.tolerance, this.contiguous);
+    }
+    // The pointer chooses the island; layer bindings and pixel selections still apply.
+    const mask = editingMask({ ...doc, restrict: false, selectedIslands: [] });
     const ink = masked(area, mask);
+    if (!alphaBounds(ink)) return;
     const ctx = context(ink);
     ctx.globalCompositeOperation = "source-in";
     ctx.fillStyle = this.color;
@@ -514,6 +692,7 @@ export class Editor {
     this.emit();
   }
   selectUVSet(value: string) {
+    this.pickingLayerIsland = false;
     const slot = this.model?.slots.find((s) => s.id === this.activeId);
     if (!slot?.uvSets.includes(value)) return;
     const candidates = slot.sourceTextures
@@ -566,7 +745,9 @@ export class Editor {
     );
   }
   selectIsland(id: number, add = false) {
-    this.change("Select UV island", (d) => {
+    this.confirmTransform();
+    const d = this.doc;
+    if (d) {
       d.selectedIslands =
         id < 0
           ? []
@@ -575,9 +756,26 @@ export class Editor {
               ? d.selectedIslands.filter((i) => i !== id)
               : [...d.selectedIslands, id]
             : [id];
-    });
+      this.emit();
+    }
+  }
+  selectModelFace(meshId: string, triangle: number, add = false) {
+    const d = this.doc;
+    if (!d) return;
+    const matches = (island: Island) => island.faces?.some(face => face.meshId === meshId && face.triangle === triangle);
+    const island = d.islands.find(matches);
+    if (!island) return;
+    const candidates = d.layers.filter(layer => layer.uvBinding && matches(layer.uvBinding.island));
+    const linked = candidates.find(layer => layer.id === d.activeId)
+      ?? candidates.slice().reverse().find(layer => layer.visible)
+      ?? candidates.at(-1);
+    const selection = [...d.selectedIslands];
+    if (linked && linked.id !== d.activeId) this.selectLayer(linked.id);
+    if (add && this.doc) this.doc.selectedIslands = selection;
+    this.selectIsland(island.id, add);
   }
   setTool(tool: Tool) {
+    this.pickingLayerIsland = false;
     this.confirmTransform();
     this.tool = tool;
     this.emit();
@@ -670,7 +868,25 @@ export class Editor {
       "Drag handles or the fragment. Enter applies · Escape cancels.",
     );
   }
-  updateTransform(points: Point[]) {
+  scheduleTransform(points: Point[]) {
+    if (!this.transform) return;
+    this.pendingTransform = { session: this.transform, points };
+    if (!this.transformFrame)
+      this.transformFrame = requestAnimationFrame(() => this.flushTransform(true));
+  }
+  flushTransform(interactive = false) {
+    if (this.transformFrame) cancelAnimationFrame(this.transformFrame);
+    this.transformFrame = 0;
+    const pending = this.pendingTransform;
+    this.pendingTransform = null;
+    if (pending && this.transform === pending.session) this.updateTransform(pending.points, interactive);
+    else if (!interactive && this.reducedPreview && this.doc && this.output) {
+      const slot = this.model?.slots.find((s) => s.id === this.activeId);
+      if (slot) syncMaterial(slot, this.doc, this.output);
+      this.reducedPreview = false;
+    }
+  }
+  updateTransform(points: Point[], interactive = false) {
     const t = this.transform,
       d = this.doc;
     if (!t || !d) return;
@@ -681,10 +897,17 @@ export class Editor {
         t.kind === "mesh" ? "mesh" : "perspective",
         d.width,
         d.height,
+        t.warped,
       );
-      const c = cloneCanvas(t.rest);
-      context(c).drawImage(warped, 0, 0);
-      t.outside = t.clip ? masked(warped, t.clip, true) : undefined;
+      t.warped = warped;
+      const c = t.raster ?? (t.raster = canvas(d.width, d.height, false));
+      const ctx = context(c);
+      ctx.clearRect(0, 0, d.width, d.height);
+      ctx.drawImage(t.rest, 0, 0);
+      ctx.drawImage(warped, 0, 0);
+      t.outside = t.clip
+        ? masked(warped, t.clip, true, t.outside ?? canvas(d.width, d.height, false))
+        : undefined;
       const next = snapshot(d);
       const layer = next.layers.find((l) => l.id === t.layerId)!;
       layer.canvas = c;
@@ -698,7 +921,7 @@ export class Editor {
       };
       this.docs.set(this.activeId, next);
       t.points = points;
-      this.emit(true);
+      this.emit(true, interactive);
     } catch (e) {
       this.message = e instanceof Error ? e.message : String(e);
       this.emit();
@@ -723,6 +946,7 @@ export class Editor {
     );
   }
   confirmTransform() {
+    this.flushTransform();
     if (!this.transform) return;
     this.history.push(
       this.transform.kind === "mesh"
@@ -737,6 +961,9 @@ export class Editor {
     this.emit(true);
   }
   cancelTransform() {
+    if (this.transformFrame) cancelAnimationFrame(this.transformFrame);
+    this.transformFrame = 0;
+    this.pendingTransform = null;
     if (!this.transform) return;
     this.docs.set(this.activeId, snapshot(this.transform.before));
     this.transform = null;

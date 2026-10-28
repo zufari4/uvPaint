@@ -1,14 +1,18 @@
+import type { UVDisplayMode } from "../types";
 export const preferenceKey = "uvpaint.preferences";
 export function loadPreferences(): {
   uvColor: string;
   uvOpacity: number;
   textScale: number;
+  uvDisplay: UVDisplayMode;
 } {
-  const defaults = { uvColor: "#a5ece0", uvOpacity: 0.65, textScale: 1.6 };
+  const defaults = { uvColor: "#a5ece0", uvOpacity: 0.65, textScale: 1.4, uvDisplay: "off" as UVDisplayMode };
   try {
     const saved = JSON.parse(localStorage.getItem(preferenceKey) ?? "null");
     if (!saved || typeof saved !== "object") return defaults;
     return {
+      uvDisplay: ["off", "quads", "triangles", "outline"].includes(saved.uvDisplay)
+        ? saved.uvDisplay : defaults.uvDisplay,
       textScale:
         typeof saved.textScale === "number" &&
         Number.isFinite(saved.textScale) &&
