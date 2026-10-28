@@ -1,0 +1,58 @@
+{
+  "name": "uvpaint",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Base color texture studio with UV guides and live 3D preview",
+  "author": "UV Paint",
+  "license": "MIT",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc --noEmit && tsc -p tsconfig.electron.json && vite build && node scripts/build-electron.mjs",
+    "start": "electron .",
+    "test": "vitest run",
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:packaged": "node scripts/packaged-smoke.mjs",
+    "dist": "npm run build && electron-builder --win portable --x64"
+  },
+  "dependencies": {
+    "lucide-react": "^0.577.0",
+    "ml-matrix": "^6.12.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.183.0",
+    "@vitejs/plugin-react": "^5.1.4",
+    "electron": "^45.1.0",
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.58.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
+  },
+  "build": {
+    "appId": "studio.uvpaint.desktop",
+    "productName": "UV Paint",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "UV-Paint-${version}-Windows-x64.exe"
+    }
+  }
+}
