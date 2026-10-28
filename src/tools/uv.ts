@@ -5,6 +5,7 @@ export function extractIslands(
   scene: THREE.Object3D,
   materialId: string,
   uvSet: string,
+  textureOverride?: THREE.Texture | null,
 ): Island[] {
   const triangles: Point[][] = [];
   const edges = new Map<string, number[]>();
@@ -33,7 +34,10 @@ export function extractIslands(
     for (const group of groups) {
       const mat = mats[group.materialIndex ?? 0];
       if (mat?.userData.slotId !== materialId) continue;
-      const texture = (mat as THREE.MeshBasicMaterial).map;
+      const texture =
+        textureOverride === undefined
+          ? (mat as THREE.MeshBasicMaterial).map
+          : textureOverride;
       texture?.updateMatrix();
       for (let i = group.start; i < group.start + group.count; i += 3) {
         const keys: string[] = [];
@@ -103,7 +107,9 @@ export function islandMask(doc: TextureDocument) {
   ctx.fillStyle = "#fff";
   traceIslands(
     ctx,
-    doc.islands.filter((i) => doc.selectedIslands.includes(i.id)),
+    doc.selectedIslands.length
+      ? doc.islands.filter((i) => doc.selectedIslands.includes(i.id))
+      : doc.islands,
     doc.width,
     doc.height,
   );

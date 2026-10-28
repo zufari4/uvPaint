@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointer } from "react";
-import { ImagePlus, Maximize, Minus, Plus, ScanLine } from "lucide-react";
+import { ImagePlus, Maximize, Minus, Plus } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
 import type { Point, SelectionMode } from "../types";
@@ -8,6 +8,15 @@ import { canvas, context } from "../core/canvas";
 import { polygonMask } from "../tools/selection";
 import { traceIslands, hitIsland } from "../tools/uv";
 import { PaintStroke } from "../tools/paint";
+import { OptionsBar } from "./OptionsBar";
+import {
+  dragTransform,
+  hitTransform,
+  midpoint,
+  rotationHandle,
+  transformHandles,
+  type TransformHit,
+} from "../tools/free-transform";
 
 type Gesture = {
   kind: "pan" | "select" | "paint" | "transform";
@@ -19,6 +28,7 @@ type Gesture = {
   mode: SelectionMode;
   stroke?: PaintStroke;
   pan?: Point;
+  transformHit?: TransformHit;
 };
 export function TextureCanvas() {
   const e = useEditor(),
@@ -56,7 +66,7 @@ export function TextureCanvas() {
     fit();
     polygon.current = [];
     setPath([]);
-  }, [doc?.id, doc?.width, doc?.height, size.w === 0]);
+  }, [doc?.id, doc?.sourceIndex, doc?.width, doc?.height, size.w === 0]);
   useEffect(() => {
     polygon.current = [];
     setPath([]);
@@ -99,11 +109,19 @@ export function TextureCanvas() {
     const up = (ev: KeyboardEvent) => {
       if (ev.code === "Space") setSpace(false);
     };
+    const blur = () => {
+      setSpace(false);
+      if (gesture.current?.stroke) gesture.current.stroke.finish();
+      gesture.current = null;
+      setPath([]);
+    };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
     return () => {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
     };
   }, [doc, zoom]);
   useEffect(() => {
@@ -131,6 +149,12 @@ export function TextureCanvas() {
         if ((Math.round(x / tile) + Math.round(y / tile)) % 2 === 0)
           ctx.fillRect(x, y, Math.min(tile, w - x), Math.min(tile, h - y));
     if (e.output) ctx.drawImage(e.output, 0, 0);
+    if (e.transform?.outside && e.layer?.visible) {
+      ctx.save();
+      ctx.globalAlpha = 0.4 * e.layer.opacity;
+      ctx.drawImage(e.transform.outside, 0, 0);
+      ctx.restore();
+    }
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, w, h);
@@ -198,7 +222,7 @@ export function TextureCanvas() {
       ctx.strokeStyle = "#99e4d0";
       ctx.lineWidth = 1 / zoom;
       ctx.beginPath();
-      if (t.kind === "perspective") {
+      if (t.kind !== "mesh") {
         t.points.forEach((p, i) =>
           i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y),
         );
@@ -220,7 +244,8 @@ export function TextureCanvas() {
           }
       }
       ctx.stroke();
-      t.points.forEach((p, i) => {
+      const handles = t.kind === "free" ? transformHandles(t.points) : t.points;
+      handles.forEach((p, i) => {
         ctx.fillStyle = "#172d2b";
         ctx.fillRect(p.x - 4 / zoom, p.y - 4 / zoom, 8 / zoom, 8 / zoom);
         ctx.strokeRect(p.x - 4 / zoom, p.y - 4 / zoom, 8 / zoom, 8 / zoom);
@@ -230,6 +255,19 @@ export function TextureCanvas() {
           ctx.fillText(String(i + 1), p.x + 8 / zoom, p.y - 7 / zoom);
         }
       });
+      if (t.kind === "free") {
+        const top = midpoint(t.points[0], t.points[1]),
+          r = rotationHandle(t.points, zoom);
+        ctx.beginPath();
+        ctx.moveTo(top.x, top.y);
+        ctx.lineTo(r.x, r.y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, 5 / zoom, 0, Math.PI * 2);
+        ctx.fillStyle = "#172d2b";
+        ctx.fill();
+        ctx.stroke();
+      }
     }
     if (e.cloneSource && e.tool === "clone") {
       const p = e.cloneSource;
@@ -248,6 +286,7 @@ export function TextureCanvas() {
   }, [e.revision, size, zoom, pan, path]);
   function down(ev: ReactPointer<HTMLCanvasElement>) {
     if (!doc) return;
+    ev.currentTarget.focus({ preventScroll: true });
     ev.currentTarget.setPointerCapture(ev.pointerId);
     const p = point(ev),
       mode = ev.shiftKey ? "add" : ev.altKey ? "subtract" : e.selectionMode;
@@ -268,14 +307,19 @@ export function TextureCanvas() {
       return;
     }
     if (e.transform || e.tool === "move") {
-      e.beginTransform(e.transform?.kind ?? "perspective");
+      e.beginTransform(e.transform?.kind ?? "free");
       const t = e.transform;
       if (!t) return;
       g.kind = "transform";
       g.original = t.points.map((p) => ({ ...p }));
-      g.handle = t.points.findIndex(
-        (q) => Math.hypot(q.x - p.x, q.y - p.y) < 12 / zoom,
+      g.transformHit = hitTransform(
+        t.points,
+        p,
+        zoom,
+        t.kind === "free",
+        ev.ctrlKey || ev.metaKey,
       );
+      g.handle = g.transformHit.handle;
       gesture.current = g;
       return;
     }
@@ -291,7 +335,7 @@ export function TextureCanvas() {
       e.fill(p);
       return;
     }
-    if (e.tool === "eyedropper") {
+    if (e.tool === "eyedropper" || (e.tool === "brush" && ev.altKey)) {
       e.pickColor(p);
       return;
     }
@@ -301,7 +345,16 @@ export function TextureCanvas() {
       return;
     }
     if (["brush", "eraser", "clone"].includes(e.tool)) {
-      if (!e.layer) return;
+      if (!e.layer) {
+        e.fail("Select a layer or add an empty layer before painting.");
+        return;
+      }
+      if (p.x < 0 || p.y < 0 || p.x >= doc.width || p.y >= doc.height) {
+        e.notify(
+          "Paint inside the texture rectangle. Use Fit canvas to locate it.",
+        );
+        return;
+      }
       if (e.tool === "clone" && !e.cloneSource) {
         e.notify("Alt-click a source point before using Clone Stamp.");
         return;
@@ -321,8 +374,37 @@ export function TextureCanvas() {
   }
   function move(ev: ReactPointer<HTMLCanvasElement>) {
     const g = gesture.current;
-    if (!g) return;
     const p = point(ev);
+    if (!g) {
+      if (e.transform) {
+        const hit = hitTransform(
+          e.transform.points,
+          p,
+          zoom,
+          e.transform.kind === "free",
+          ev.ctrlKey || ev.metaKey,
+        );
+        const cursors = [
+          "nwse-resize",
+          "nesw-resize",
+          "nwse-resize",
+          "nesw-resize",
+          "ns-resize",
+          "ew-resize",
+          "ns-resize",
+          "ew-resize",
+        ];
+        ev.currentTarget.style.cursor =
+          hit.action === "rotate"
+            ? "crosshair"
+            : hit.action === "scale"
+              ? cursors[hit.handle]
+              : hit.action === "distort"
+                ? "crosshair"
+                : "move";
+      } else ev.currentTarget.style.cursor = "";
+      return;
+    }
     if (g.kind === "pan") {
       setPan({
         x: g.pan!.x + ev.clientX - g.start.x,
@@ -335,13 +417,15 @@ export function TextureCanvas() {
       return;
     }
     if (g.kind === "transform") {
-      const next = g.original.map((q) => ({ ...q }));
-      if (g.handle >= 0) next[g.handle] = p;
-      else
-        next.forEach((q) => {
-          q.x += p.x - g.start.x;
-          q.y += p.y - g.start.y;
-        });
+      const next = dragTransform(
+        g.original,
+        g.start,
+        p,
+        g.transformHit!,
+        ev.shiftKey,
+        ev.altKey,
+        ev.ctrlKey || ev.metaKey,
+      );
       e.updateTransform(next);
       return;
     }
@@ -367,15 +451,7 @@ export function TextureCanvas() {
   }
   return (
     <section className="texture-pane">
-      <div className="pane-heading">
-        <span>
-          <ScanLine size={14} /> TEXTURE EDITOR
-        </span>
-        <div className="mini-actions">
-          <span>{doc ? `${doc.width} × ${doc.height}` : "RGBA canvas"}</span>
-          <span className="tag">sRGB</span>
-        </div>
-      </div>
+      <OptionsBar />
       <div
         className={`canvas-host cursor-${space ? "pan" : e.tool}`}
         ref={host}
@@ -396,6 +472,8 @@ export function TextureCanvas() {
         <canvas
           ref={view}
           data-testid="texture-canvas"
+          tabIndex={0}
+          aria-label="Texture canvas"
           onPointerDown={(ev) => {
             try {
               down(ev);
@@ -418,7 +496,9 @@ export function TextureCanvas() {
             gesture.current = null;
             setPath([]);
           }}
-          onDoubleClick={finishPolygon}
+          onDoubleClick={() =>
+            e.transform ? e.confirmTransform() : finishPolygon()
+          }
           onWheel={(ev) => {
             ev.preventDefault();
             if (!doc) return;
@@ -465,7 +545,7 @@ export function TextureCanvas() {
         {doc && (
           <div className="canvas-label">
             {doc.name}
-            <span>BASE COLOR</span>
+            <span>{doc.textureUsage?.toUpperCase() ?? "BASE COLOR"}</span>
           </div>
         )}
       </div>
@@ -474,7 +554,9 @@ export function TextureCanvas() {
           {doc?.selection
             ? "Selection active"
             : e.transform
-              ? "Transform active"
+              ? e.transform.kind === "free"
+                ? "Corners scale · Outside rotates · Shift unlocks / snaps · Alt from center"
+                : "Drag handles · Enter applies · Escape cancels"
               : "Space + drag to pan · Scroll to zoom"}
         </span>
         <div className="mini-actions">

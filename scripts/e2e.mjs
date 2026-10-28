@@ -42,7 +42,10 @@ try {
     const texture = new THREE.CanvasTexture(img);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.flipY = false;
-    const a = new THREE.MeshStandardMaterial({ map: texture });
+    const a = new THREE.MeshStandardMaterial({
+      map: texture,
+      transparent: true,
+    });
     a.name = "Paint";
     const b = new THREE.MeshStandardMaterial({ color: "#8899aa" });
     b.name = "Blank";
@@ -307,8 +310,9 @@ try {
     ]);
     e.confirmTransform();
     check(
-      pixel(e.layer.canvas, 40, 30)[3] === 0,
-      "UV clipping restricts transformed images",
+      pixel(composite({ ...e.doc, layers: [e.layer] }), 40, 30)[3] === 0 &&
+        pixel(e.layer.canvas, 40, 30)[3] > 0,
+      "UV mask hides transformed pixels without deleting them",
     );
     e.change("disable restriction", (d) => {
       d.restrict = false;
@@ -612,8 +616,9 @@ try {
   await page.screenshot({ path: "test-results/03-transform.png" });
   await page.keyboard.press("Enter");
   await page
-    .getByRole("button", { name: "Keyboard shortcuts and help", exact: true })
+    .getByRole("button", { name: "Application menu", exact: true })
     .click();
+  await page.getByRole("menuitem", { name: "Help", exact: true }).click();
   assert.equal(await page.locator(".help-modal").count(), 1);
   await page.getByRole("button", { name: "Close help", exact: true }).click();
   const security = await page.evaluate(() => ({
@@ -635,7 +640,7 @@ try {
     .getByRole("button", { name: "Export PNG (Ctrl+Shift+S)", exact: true })
     .click();
   await page.waitForFunction(() =>
-    document.querySelector(".status-bar")?.textContent?.includes("Exported"),
+    document.querySelector(".notice-toast")?.textContent?.includes("Exported"),
   );
   const png = await readFile(savePath);
   assert.equal(png.readUInt32BE(0), 0x89504e47);

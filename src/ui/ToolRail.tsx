@@ -19,7 +19,7 @@ const items: [Tool, typeof Move, string][] = [
   ["move", Move, "Move / transform (V)"],
   ["rect", Scan, "Rectangle selection (M)"],
   ["lasso", Lasso, "Freehand lasso (L)"],
-  ["polygon", PenTool, "Polygonal lasso (P) · Enter closes"],
+  ["polygon", PenTool, "Polygonal lasso (Shift+L) · Enter closes"],
   ["wand", WandSparkles, "Magic wand (W)"],
   ["brush", Paintbrush, "Brush (B)"],
   ["eraser", Eraser, "Eraser (E)"],
@@ -44,18 +44,6 @@ export function ToolRail() {
           </Button>
         </div>
       ))}
-      <label className="color-swatch" title="Paint color">
-        <input
-          aria-label="Paint color"
-          type="color"
-          value={e.color}
-          onChange={(ev) => {
-            e.color = ev.target.value;
-            e.emit();
-          }}
-        />
-      </label>
-      <span className="rail-caption">COLOR</span>
     </aside>
   );
 }

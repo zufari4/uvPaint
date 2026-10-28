@@ -1,6 +1,12 @@
 import type { Editor } from "../core/editor";
 import type { Point, TextureDocument } from "../types";
-import { canvas, cloneCanvas, context, masked } from "../core/canvas";
+import {
+  canvas,
+  cloneCanvas,
+  context,
+  masked,
+  alphaBounds,
+} from "../core/canvas";
 import { snapshot } from "../core/history";
 import { editingMask } from "./uv";
 export class PaintStroke {
@@ -16,6 +22,27 @@ export class PaintStroke {
     p: Point,
   ) {
     const d = editor.doc!;
+    const layer = editor.layer;
+    if (!layer)
+      throw new Error("Select a layer or add an empty layer before painting.");
+    if (!layer.visible)
+      throw new Error(
+        "The active layer is hidden. Enable its eye icon before painting.",
+      );
+    if (layer.opacity === 0)
+      throw new Error(
+        "The active layer opacity is 0%. Increase it before painting.",
+      );
+    if (editor.brushOpacity === 0)
+      throw new Error("Brush opacity is 0%. Increase Opacity to paint.");
+    if (d.restrict && !d.islands.length)
+      throw new Error(
+        "This UV map has no islands. Choose another UV map or disable UV clipping.",
+      );
+    if (d.selection && !alphaBounds(d.selection))
+      throw new Error(
+        "The selection is empty. Press Ctrl+D or Clear selection before painting.",
+      );
     this.before = snapshot(d);
     this.base = editor.layer!.canvas;
     this.ink = canvas(d.width, d.height);

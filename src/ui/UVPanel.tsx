@@ -26,43 +26,41 @@ export function UVPanel() {
       <div className="uv-settings">
         <select
           aria-label="UV set"
+          title="UV mapping for the guides and live Base Color preview"
           disabled={!slot}
           value={d?.uvSet ?? "uv"}
           onChange={(ev) => e.selectUVSet(ev.target.value)}
         >
           {(slot?.uvSets.length ? slot.uvSets : ["uv"]).map((s) => (
             <option key={s} value={s}>
-              {s === "uv" ? "UV 0" : `UV ${s.slice(2)}`}
+              {d?.uvNames?.[s] ||
+                slot?.uvLabels[s] ||
+                (s === "uv" ? "UV 0" : `UV ${s.slice(2)}`)}
             </option>
           ))}
         </select>
-        <input
-          aria-label="UV line color"
-          title="UV line color"
-          type="color"
-          value={e.uvColor}
-          onChange={(ev) => {
-            e.uvColor = ev.target.value;
-            e.emit();
-          }}
-        />
-        <input
-          aria-label="UV opacity"
-          title="UV opacity"
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value={e.uvOpacity}
-          onChange={(ev) => {
-            e.uvOpacity = +ev.target.value;
-            e.emit();
-          }}
-        />
       </div>
+      {slot && (
+        <div className="uv-name">
+          <input
+            aria-label="UV map name"
+            key={`${d?.id}-${d?.uvSet}`}
+            placeholder="Name this UV map…"
+            defaultValue={d?.uvNames?.[d.uvSet] ?? ""}
+            title="GLB may omit Blender UV map names. This session alias is undoable."
+            onBlur={(ev) => {
+              const value = ev.target.value;
+              if (value !== (d?.uvNames?.[d.uvSet] ?? ""))
+                e.change("Rename UV map", (doc) => {
+                  doc.uvNames = { ...doc.uvNames, [doc.uvSet]: value };
+                });
+            }}
+          />
+        </div>
+      )}
       <label className="restriction">
         <input
-          aria-label="Restrict edits to selected islands"
+          aria-label="Clip edits to UV islands"
           type="checkbox"
           disabled={!d}
           checked={d?.restrict ?? false}
@@ -72,11 +70,11 @@ export function UVPanel() {
             })
           }
         />{" "}
-        Clip edits to selected islands
+        Clip edits to UV islands
       </label>
       {d?.restrict && !d.selectedIslands.length && (
-        <small className="warning-inline">
-          Select an island to allow edits.
+        <small className="uv-clip-hint">
+          All islands. Select islands to limit edits further.
         </small>
       )}
       <div className="island-list">

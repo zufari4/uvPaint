@@ -1,15 +1,21 @@
 import { useEffect } from "react";
 import { editor as e } from "../core/editor";
 import type { Tool } from "../types";
+import { invertSelection } from "../tools/selection";
 export function useShortcuts() {
   useEffect(() => {
     const handler = (ev: KeyboardEvent) => {
       if (
-        (ev.target as HTMLElement).matches("input,textarea,select") ||
+        ev.defaultPrevented ||
+        (ev.target as HTMLElement).closest(
+          "input,textarea,select,[contenteditable=true]",
+        ) ||
         document.querySelector(".modal-backdrop")
       )
         return;
-      const k = ev.key.toLowerCase(),
+      const k = ev.code.startsWith("Key")
+          ? ev.code.slice(3).toLowerCase()
+          : ev.key.toLowerCase(),
         ctrl = ev.ctrlKey || ev.metaKey;
       if (ctrl) {
         const actions: Record<string, () => void> = {
@@ -18,7 +24,24 @@ export function useShortcuts() {
           c: () => e.copy(),
           x: () => e.copy(true),
           v: () => e.paste(),
-          j: () => e.copy(false, true),
+          j: () => {
+            if (ev.shiftKey) e.copy(false, true);
+            else {
+              e.copy();
+              e.paste();
+            }
+          },
+          a: () => {
+            if (e.doc)
+              e.setSelection(
+                invertSelection(null, e.doc.width, e.doc.height),
+                "replace",
+              );
+          },
+          t: () => {
+            e.setTool("move");
+            e.beginTransform("free");
+          },
           d: () => e.deselect(),
           i: () => {
             if (ev.shiftKey) e.invert();
@@ -43,19 +66,55 @@ export function useShortcuts() {
         return;
       }
       if (ev.key === "Delete") {
+        ev.preventDefault();
         e.clearPixels();
         return;
       }
-      if (k === "[" || k === "]") {
-        e.brushSize = Math.max(1, e.brushSize + (k === "[" ? -4 : 4));
+      if (ev.altKey) return;
+      if (ev.code === "BracketLeft" || ev.code === "BracketRight") {
+        const step =
+          e.brushSize <= 10
+            ? 1
+            : e.brushSize <= 100
+              ? 5
+              : e.brushSize <= 300
+                ? 10
+                : 25;
+        e.brushSize = Math.max(
+          1,
+          e.brushSize + (ev.code === "BracketLeft" ? -step : step),
+        );
         e.emit();
+        ev.preventDefault();
+        return;
+      }
+      if (k === "d" || k === "x") {
+        if (k === "d") {
+          e.color = "#000000";
+          e.backgroundColor = "#ffffff";
+        } else [e.color, e.backgroundColor] = [e.backgroundColor, e.color];
+        e.emit();
+        ev.preventDefault();
+        return;
+      }
+      if (ev.shiftKey && k === "l") {
+        e.setTool(e.tool === "lasso" ? "polygon" : "lasso");
+        ev.preventDefault();
+        return;
+      }
+      if (
+        /^Digit[0-9]$/.test(ev.code) &&
+        ["brush", "eraser", "clone", "fill"].includes(e.tool)
+      ) {
+        e.brushOpacity = (Number(ev.code.slice(-1)) || 10) / 10;
+        e.emit();
+        ev.preventDefault();
         return;
       }
       const keys: Record<string, Tool> = {
         v: "move",
         m: "rect",
         l: "lasso",
-        p: "polygon",
         w: "wand",
         b: "brush",
         e: "eraser",

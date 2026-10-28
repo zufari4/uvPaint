@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { Box, Maximize, Eye, EyeOff, ChevronDown } from "lucide-react";
+import { ViewportNavigation } from "./viewportNavigation";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { Box, Maximize } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
+import { ModelPartsMenu } from "./ModelPartsMenu";
 export function Viewport() {
   const e = useEditor(),
     host = useRef<HTMLDivElement>(null),
     fitRef = useRef<() => void>(() => {});
-  const [showParts, setShowParts] = useState(true);
   useEffect(() => {
     const container = host.current!;
     let renderer: THREE.WebGLRenderer;
@@ -29,52 +30,135 @@ export function Viewport() {
     container.appendChild(renderer.domElement);
     renderer.domElement.dataset.testid = "preview-canvas";
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 10000);
-    camera.position.set(4, 2, 5);
-    const orbit = new OrbitControls(camera, renderer.domElement);
-    orbit.enableDamping = true;
+    const navigation = new ViewportNavigation(renderer.domElement, () =>
+      fitRef.current(),
+    );
     const model = e.model;
     if (model) scene.add(model.scene);
+    const pmrem = new THREE.PMREMGenerator(renderer),
+      room = new RoomEnvironment();
+    const environment = pmrem.fromScene(room, 0.04);
+    room.dispose();
+    pmrem.dispose();
+    scene.add(new THREE.HemisphereLight(0xc7d9ff, 0x343a45, 1));
+    const light = new THREE.DirectionalLight(0xfff1de, 3);
+    light.position.set(4, 7, 5);
+    scene.add(light);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    const edgeObjects: THREE.LineSegments[] = [];
+    const box = model
+      ? new THREE.Box3().setFromObject(model.scene)
+      : new THREE.Box3(
+          new THREE.Vector3(-1, -1, -1),
+          new THREE.Vector3(1, 1, 1),
+        );
+    const radius = Math.max(box.getSize(new THREE.Vector3()).length(), 1),
+      center = box.getCenter(new THREE.Vector3());
+    light.position
+      .copy(center)
+      .add(new THREE.Vector3(radius, radius * 1.7, radius));
+    light.target.position.copy(center);
+    scene.add(light.target);
+    light.castShadow = true;
+    light.shadow.mapSize.set(1024, 1024);
+    light.shadow.camera.left = -radius;
+    light.shadow.camera.right = radius;
+    light.shadow.camera.top = radius;
+    light.shadow.camera.bottom = -radius;
+    light.shadow.camera.near = radius / 100;
+    light.shadow.camera.far = radius * 6;
+    light.shadow.normalBias = radius * 0.002;
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(radius * 5, radius * 5),
+      new THREE.ShadowMaterial({ opacity: 0.25 }),
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(center.x, box.min.y - radius * 0.003, center.z);
+    ground.receiveShadow = true;
+    scene.add(ground);
+    if (model) {
+      for (const slot of model.slots) {
+        slot.studio.envMap = environment.texture;
+        slot.studio.envMapIntensity = 2.5;
+        slot.studio.needsUpdate = true;
+      }
+      for (const part of model.parts) {
+        part.castShadow = true;
+        part.receiveShadow = true;
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(part.geometry, 25),
+          new THREE.LineBasicMaterial({
+            color: 0x9fd5ca,
+            transparent: true,
+            opacity: 0.5,
+            depthWrite: false,
+          }),
+        );
+        edges.userData.uvPaintEdges = true;
+        part.add(edges);
+        edgeObjects.push(edges);
+      }
+    }
+    let lastMode = "";
     const fit = () => {
       if (!model) return;
       const box = new THREE.Box3().setFromObject(model.scene),
         center = box.getCenter(new THREE.Vector3()),
         size = box.getSize(new THREE.Vector3());
       const radius = Math.max(size.x, size.y, size.z, 0.1);
-      const distance =
-        (radius / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)))) *
-        1.5;
-      camera.position
-        .copy(center)
-        .add(
-          new THREE.Vector3(0.8, 0.45, 1).normalize().multiplyScalar(distance),
-        );
-      camera.near = radius / 1000;
-      camera.far = radius * 1000;
-      camera.updateProjectionMatrix();
-      orbit.target.copy(center);
-      orbit.update();
+      navigation.fit(center, radius);
     };
     fitRef.current = fit;
     fit();
     const resize = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
       renderer.setSize(width, height);
-      camera.aspect = width / Math.max(1, height);
-      camera.updateProjectionMatrix();
+      navigation.resize(width, height);
     });
     resize.observe(container);
     let frame = 0;
     const animate = () => {
       frame = requestAnimationFrame(animate);
-      orbit.update();
-      renderer.render(scene, camera);
+      if (lastMode !== e.previewMode) {
+        lastMode = e.previewMode;
+        const studio = lastMode === "studio";
+        ground.visible = studio;
+        renderer.toneMapping = studio
+          ? THREE.ACESFilmicToneMapping
+          : THREE.NoToneMapping;
+        renderer.toneMappingExposure = 1;
+        if (model)
+          for (const part of model.parts) {
+            const swap = (mat: THREE.Material) => {
+              const slot = model.slots.find(
+                (s) => s.id === mat.userData.slotId,
+              );
+              return slot ? (studio ? slot.studio : slot.preview) : mat;
+            };
+            part.material = Array.isArray(part.material)
+              ? part.material.map(swap)
+              : swap(part.material);
+          }
+      }
+      for (const edges of edgeObjects) edges.visible = e.previewEdges;
+      navigation.orbit.update();
+      renderer.render(scene, navigation.camera);
     };
     animate();
     return () => {
       cancelAnimationFrame(frame);
       resize.disconnect();
-      orbit.dispose();
+      navigation.dispose();
+      for (const edges of edgeObjects) {
+        edges.removeFromParent();
+        edges.geometry.dispose();
+        (edges.material as THREE.Material).dispose();
+      }
+      ground.geometry.dispose();
+      ground.material.dispose();
+      environment.dispose();
+      light.shadow.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
       if (model) scene.remove(model.scene);
@@ -82,13 +166,34 @@ export function Viewport() {
   }, [e.model]);
   return (
     <section className="preview-pane">
-      <div className="pane-heading">
-        <span>
-          <Box size={14} /> LIVE PREVIEW
-        </span>
+      <div className="pane-heading preview-toolbar">
+        <ModelPartsMenu />
         <div className="mini-actions">
           <span className="live-dot" />
-          Unlit
+          <select
+            aria-label="Preview shading"
+            title="Display only: PNG colors are unchanged"
+            value={e.previewMode}
+            onChange={(ev) => {
+              e.previewMode = ev.target.value as typeof e.previewMode;
+              e.emit();
+            }}
+          >
+            <option value="unlit">Texture · Unlit</option>
+            <option value="studio">Studio · Lit</option>
+          </select>
+          <label title="Highlight geometry edges (preview only)">
+            <input
+              type="checkbox"
+              aria-label="Show model edges"
+              checked={e.previewEdges}
+              onChange={(ev) => {
+                e.previewEdges = ev.target.checked;
+                e.emit();
+              }}
+            />{" "}
+            Edges
+          </label>
           <Button title="Frame model" onClick={() => fitRef.current()}>
             <Maximize size={14} />
           </Button>
@@ -120,39 +225,6 @@ export function Viewport() {
             {e.model.name}
           </div>
         )}
-      </div>
-      {e.model && (
-        <div className="parts-panel">
-          <button
-            className="parts-header"
-            onClick={() => setShowParts(!showParts)}
-          >
-            <ChevronDown size={13} /> MODEL PARTS{" "}
-            <span>{e.model.parts.length}</span>
-          </button>
-          {showParts && (
-            <div className="parts-list">
-              {e.model.parts.map((part, i) => (
-                <button
-                  key={part.uuid}
-                  onClick={() => {
-                    part.visible = !part.visible;
-                    e.emit();
-                  }}
-                  title="Toggle model part visibility"
-                >
-                  {part.visible ? <Eye size={13} /> : <EyeOff size={13} />}
-                  <span>{part.name || `Mesh ${i + 1}`}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      <div className="preview-footer">
-        <span>Drag to orbit</span>
-        <span>Right-drag to pan</span>
-        <span>Scroll to zoom</span>
       </div>
     </section>
   );

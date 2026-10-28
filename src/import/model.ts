@@ -3,6 +3,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { ModelAsset, TextureDocument, MaterialSlot } from "../types";
 import { canvas, context } from "../core/canvas";
 import { extractIslands } from "../tools/uv";
+import { syncMaterial } from "../render/material";
 export async function loadGLB(
   bytes: ArrayBuffer,
   name: string,
@@ -74,20 +75,65 @@ export async function prepareModel(
         const preview = new THREE.MeshBasicMaterial({
           map: texture,
           color: 0xffffff,
-          transparent: true,
+          transparent: original.transparent,
           side: original.side,
-          depthWrite: true,
+          depthWrite: !original.transparent,
           toneMapped: false,
-          alphaTest: 0.001,
+          alphaTest: original.alphaTest,
         });
         preview.userData.slotId = id;
+        const studio = new THREE.MeshStandardMaterial({
+          map: texture,
+          color: 0xffffff,
+          roughness: 0.55,
+          metalness: 0,
+          side: original.side,
+          transparent: original.transparent,
+          alphaTest: original.alphaTest,
+          depthWrite: !original.transparent,
+        });
+        studio.userData.slotId = id;
+        const sourceTextures = [
+          ["Base Color", original.map],
+          ["AO", original.aoMap],
+          ["Normal", original.normalMap],
+          ["Roughness", original.roughnessMap],
+          ["Metallic", original.metalnessMap],
+          ["Emissive", original.emissiveMap],
+        ].flatMap(([usage, t]) =>
+          t instanceof THREE.Texture
+            ? [
+                {
+                  name: t.name || String(usage),
+                  usage: String(usage),
+                  uvSet: t.channel ? `uv${t.channel}` : "uv",
+                  texture: t,
+                },
+              ]
+            : [],
+        );
+        const uvLabels = Object.fromEntries(
+          sets.map((set) => [
+            set,
+            `${set === "uv" ? "UV 0" : `UV ${set.slice(2)}`} · ${
+              sourceTextures
+                .filter((t) => t.uvSet === set)
+                .map((t) => t.usage)
+                .join(", ") || "Unused"
+            }`,
+          ]),
+        );
         slot = {
           id,
           name: base.name || `Material ${slots.length + 1}`,
           original,
           preview,
+          studio,
           texture,
           uvSets: sets,
+          sourceTextures,
+          uvLabels,
+          documents: [],
         };
         seen.set(id, slot);
         slots.push(slot);
@@ -124,6 +170,18 @@ export async function prepareModel(
           islands: [],
           selectedIslands: [],
           restrict: false,
+          alphaMode: original.transparent
+            ? "BLEND"
+            : original.alphaTest > 0
+              ? "MASK"
+              : "OPAQUE",
+          alphaCutoff: original.alphaTest || 0.5,
+          uvNames: {},
+          sourceIndex: original.map
+            ? sourceTextures.findIndex((t) => t.usage === "Base Color")
+            : undefined,
+          textureUsage: "Base Color",
+          textureName: original.map?.name || "Base Color",
         });
       } else slot.uvSets = [...new Set([...slot.uvSets, ...sets])].sort();
       replacements.push(slot.preview);
@@ -136,6 +194,51 @@ export async function prepareModel(
     const slot = slots.find((s) => s.id === doc.id)!;
     if (!slot.uvSets.includes(doc.uvSet)) doc.uvSet = slot.uvSets[0] ?? "uv";
     doc.islands = extractIslands(scene, doc.id, doc.uvSet);
+    doc.restrict = doc.islands.length > 0;
+    syncMaterial(slot, doc);
+    slot.documents.push(doc);
+    for (const [sourceIndex, source] of slot.sourceTextures.entries()) {
+      if (source.usage === "Base Color") continue;
+      const image = source.texture.image as { width: number; height: number };
+      await check(image.width, image.height);
+      const pixels = canvas(image.width, image.height);
+      context(pixels).drawImage(image as CanvasImageSource, 0, 0);
+      const layerId = crypto.randomUUID();
+      const islands = extractIslands(
+        scene,
+        doc.id,
+        source.uvSet,
+        source.texture,
+      );
+      slot.documents.push({
+        id: doc.id,
+        name: slot.name,
+        width: image.width,
+        height: image.height,
+        layers: [
+          {
+            id: layerId,
+            name: source.name,
+            visible: true,
+            opacity: 1,
+            blend: "source-over",
+            canvas: pixels,
+          },
+        ],
+        activeId: layerId,
+        selection: null,
+        uvSet: source.uvSet,
+        islands,
+        selectedIslands: [],
+        restrict: islands.length > 0,
+        alphaMode: doc.alphaMode,
+        alphaCutoff: doc.alphaCutoff,
+        uvNames: {},
+        sourceIndex,
+        textureUsage: source.usage,
+        textureName: source.name,
+      });
+    }
   }
   return { model: { name, scene, slots, parts } satisfies ModelAsset, docs };
 }
@@ -146,6 +249,7 @@ export function disposeModel(model: ModelAsset) {
       if (value instanceof THREE.Texture) textures.add(value);
     slot.texture.dispose();
     slot.preview.dispose();
+    slot.studio.dispose();
     slot.original.dispose();
   }
   for (const t of textures) t.dispose();

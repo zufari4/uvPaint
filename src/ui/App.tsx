@@ -1,16 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Box,
-  FolderOpen,
-  ImagePlus,
-  Download,
-  Undo2,
-  Redo2,
-  HelpCircle,
-  SlidersHorizontal,
-  X,
-  CheckCircle2,
-} from "lucide-react";
+import { Box, FolderOpen, Download, X } from "lucide-react";
 import { useEditor } from "./hooks";
 import { useShortcuts } from "./shortcuts";
 import { Button } from "./Button";
@@ -19,14 +8,37 @@ import { Viewport } from "./Viewport";
 import { LayersPanel } from "./LayersPanel";
 import { UVPanel } from "./UVPanel";
 import { ToolRail } from "./ToolRail";
-import { OptionsBar } from "./OptionsBar";
 import { SizeDialog, HelpDialog } from "./Dialogs";
+import { MaterialDialog } from "./MaterialDialog";
+import { Notice } from "./Notice";
+import { SettingsDialog } from "./SettingsDialog";
+import { WindowControls } from "./WindowControls";
+import { AppMenu } from "./AppMenu";
+import { AboutDialog } from "./AboutDialog";
 export function App() {
   const e = useEditor();
   useShortcuts();
-  const [dialog, setDialog] = useState<"size" | "help" | null>(null),
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--ui-text-scale",
+      String(e.textScale),
+    );
+  }, [e.textScale]);
+  const [dialog, setDialog] = useState<
+      "size" | "help" | "material" | "settings" | "about" | null
+    >(null),
     [split, setSplit] = useState(60);
   const workspace = useRef<HTMLDivElement>(null);
+  const textureWorkspace = useRef<HTMLDivElement>(null);
+  const [inspectorHeight, setInspectorHeight] = useState(310);
+  const verticalDrag = useRef<{ y: number; height: number } | null>(null);
+  const resizeInspector = (height: number) =>
+    setInspectorHeight(
+      Math.max(
+        160,
+        Math.min(height, (textureWorkspace.current?.clientHeight ?? 600) - 220),
+      ),
+    );
   const dragging = useRef(false);
   useEffect(() => {
     const fail = (ev: ErrorEvent) => e.fail(ev.error ?? ev.message);
@@ -51,7 +63,6 @@ export function App() {
           <strong>
             uv<span>paint</span>
           </strong>
-          <span className="app-version">TEXTURE STUDIO</span>
         </div>
         <div className="header-actions">
           <Button
@@ -61,41 +72,7 @@ export function App() {
           >
             <FolderOpen size={16} /> Open GLB
           </Button>
-          <Button
-            title="Import image as layer"
-            disabled={e.busy}
-            onClick={() => void e.run(() => e.openImage())}
-          >
-            <ImagePlus size={16} /> Add image
-          </Button>
-          <Button
-            title={e.doc ? "Resize texture" : "New texture"}
-            onClick={() => setDialog("size")}
-          >
-            <SlidersHorizontal size={15} />
-            {e.doc ? "Canvas" : "New texture"}
-          </Button>
-          <span className="divider-line" />
-          <Button
-            title="Undo (Ctrl+Z)"
-            disabled={!e.history.undoStack.length && !e.transform}
-            onClick={() => e.undo()}
-          >
-            <Undo2 size={17} />
-          </Button>
-          <Button
-            title="Redo (Ctrl+Shift+Z)"
-            disabled={!e.history.redoStack.length}
-            onClick={() => e.redo()}
-          >
-            <Redo2 size={17} />
-          </Button>
-          <Button
-            title="Keyboard shortcuts and help"
-            onClick={() => setDialog("help")}
-          >
-            <HelpCircle size={17} />
-          </Button>
+          <AppMenu onSelect={setDialog} />
           <Button
             className="primary export-button"
             title="Export PNG (Ctrl+Shift+S)"
@@ -104,6 +81,7 @@ export function App() {
           >
             <Download size={16} /> Export PNG
           </Button>
+          <WindowControls />
         </div>
       </header>
       <div className="material-bar">
@@ -125,9 +103,33 @@ export function App() {
           )}
         </select>
         <span className="material-channel">
-          <span className="channel-swatch" /> Base Color{" "}
+          <span className="channel-swatch" />{" "}
+          {e.doc?.textureUsage ?? "Base Color"}{" "}
           <span className="muted">+ Alpha</span>
         </span>
+        {e.model?.slots.find((s) => s.id === e.activeId)?.documents.length! >
+          1 && (
+          <select
+            aria-label="Active texture"
+            value={e.doc?.sourceIndex ?? -1}
+            onChange={(event) => e.selectTexture(+event.target.value)}
+          >
+            {e.model?.slots
+              .find((s) => s.id === e.activeId)
+              ?.documents.map((d) => (
+                <option key={d.sourceIndex ?? -1} value={d.sourceIndex ?? -1}>
+                  {d.textureName} · {d.textureUsage}
+                </option>
+              ))}
+          </select>
+        )}
+        <Button
+          title="Material textures and transparency"
+          disabled={!e.doc}
+          onClick={() => setDialog("material")}
+        >
+          Material settings
+        </Button>
         <div className="spacer" />
         <span className="session-note">
           {e.model
@@ -137,13 +139,52 @@ export function App() {
           {e.doc ? "Unsaved session" : "Ready to create"}
         </span>
       </div>
-      <OptionsBar />
       <main className="workspace" ref={workspace}>
         <div className="editor-workspace" style={{ width: `${split}%` }}>
           <ToolRail />
-          <div className="texture-workspace">
+          <div className="texture-workspace" ref={textureWorkspace}>
             <TextureCanvas />
-            <div className="inspector">
+            <div
+              className="horizontal-splitter"
+              role="separator"
+              aria-label="Resize canvas and layers panels"
+              aria-orientation="horizontal"
+              aria-valuenow={inspectorHeight}
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                  event.preventDefault();
+                  resizeInspector(
+                    inspectorHeight + (event.key === "ArrowUp" ? 16 : -16),
+                  );
+                }
+              }}
+              onPointerDown={(event) => {
+                verticalDrag.current = {
+                  y: event.clientY,
+                  height: inspectorHeight,
+                };
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                if (verticalDrag.current)
+                  resizeInspector(
+                    verticalDrag.current.height +
+                      verticalDrag.current.y -
+                      event.clientY,
+                  );
+              }}
+              onPointerUp={() => {
+                verticalDrag.current = null;
+              }}
+              onPointerCancel={() => {
+                verticalDrag.current = null;
+              }}
+            />
+            <div
+              className="inspector"
+              style={{ height: inspectorHeight, minHeight: 160 }}
+            >
               <LayersPanel />
               <UVPanel />
             </div>
@@ -180,16 +221,7 @@ export function App() {
         />
         <Viewport />
       </main>
-      <footer className="status-bar">
-        <span>
-          <span className={`status-dot ${e.busy ? "busy" : ""}`} />
-          {e.busy ? "Working…" : e.message}
-        </span>
-        <span>
-          <CheckCircle2 size={12} />{" "}
-          {e.doc ? "RGBA · 8-bit · sRGB" : "All files stay on this computer"}
-        </span>
-      </footer>
+      <Notice />
       {e.error && (
         <div className="error-toast" role="alert">
           <div>
@@ -209,6 +241,16 @@ export function App() {
       )}
       {dialog === "size" && <SizeDialog close={() => setDialog(null)} />}{" "}
       {dialog === "help" && <HelpDialog close={() => setDialog(null)} />}
+      {dialog === "about" && <AboutDialog close={() => setDialog(null)} />}
+      {dialog === "settings" && (
+        <SettingsDialog
+          close={() => setDialog(null)}
+          openCanvas={() => setDialog("size")}
+        />
+      )}
+      {dialog === "material" && e.doc && (
+        <MaterialDialog close={() => setDialog(null)} />
+      )}
     </div>
   );
 }

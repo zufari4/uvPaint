@@ -4,6 +4,7 @@ export function snapshot(d: TextureDocument): TextureDocument {
     ...d,
     layers: d.layers.map((l) => ({ ...l })),
     selectedIslands: [...d.selectedIslands],
+    uvNames: d.uvNames ? { ...d.uvNames } : undefined,
   };
 }
 export class History {
@@ -20,7 +21,15 @@ export class History {
     while (this.undoStack.length > 1) {
       const seen = new Set<HTMLCanvasElement>();
       for (const s of this.undoStack)
-        for (const l of s.doc.layers) seen.add(l.canvas);
+        for (const l of s.doc.layers) {
+          seen.add(l.canvas);
+          if (l.uvMask) seen.add(l.uvMask);
+          if (l.placement) {
+            seen.add(l.placement.source);
+            seen.add(l.placement.rest);
+            seen.add(l.placement.rendered);
+          }
+        }
       let bytes = 0;
       for (const c of seen) bytes += c.width * c.height * 4;
       if (bytes <= budget) break;

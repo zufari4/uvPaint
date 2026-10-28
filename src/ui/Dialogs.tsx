@@ -82,20 +82,27 @@ export function HelpDialog({ close }: { close: () => void }) {
         <dl>
           <dt>Selection</dt>
           <dd>
-            M rectangle · L freehand · P polygon · W wand
+            M rectangle · L lasso · Shift+L switches lasso · W wand
             <br />
             Shift adds · Alt subtracts · Enter closes polygon
           </dd>
           <dt>Cut & extract</dt>
           <dd>
-            Ctrl+C / X / V copy, cut, paste · Ctrl+J extract
+            Ctrl+C / X / V copy, cut, paste · Ctrl+J copy to layer
             <br />
-            Ctrl+D deselect · Ctrl+Shift+I invert · Delete clears
+            Ctrl+A all · Ctrl+D deselect · Ctrl+Shift+I invert
+            <br />
+            Ctrl+Shift+J extract · Delete clears
           </dd>
           <dt>Transform</dt>
           <dd>
-            V then drag to move. Perspective has four independent corners. Warp
-            has 16 control points.
+            Ctrl+T free transform · Corners scale · Outside corners rotate
+            <br />
+            Shift unlocks proportions / snaps rotation · Alt from center
+            <br />
+            Ctrl snaps rotation to 5° and movement to 8 texture pixels
+            <br />
+            Ctrl-drag a corner distorts · Warp has 16 control points
             <br />
             Enter applies · Escape restores original
           </dd>
@@ -103,12 +110,21 @@ export function HelpDialog({ close }: { close: () => void }) {
           <dd>
             B brush · E eraser · G fill · I eyedropper
             <br />S clone stamp, Alt-click to set source · [ / ] brush size
+            <br />
+            Alt-click with Brush samples color · 1–9 / 0 opacity
+            <br />D black/white · X swaps foreground/background
           </dd>
           <dt>Navigation</dt>
           <dd>
             Space-drag / H pan · Scroll zooms
             <br />
-            3D: drag orbit · right-drag pan · scroll zoom
+            3D: middle-drag orbit · Shift+middle pan
+            <br />
+            Ctrl+middle / wheel zoom · Home / numpad decimal frame
+            <br />
+            Numpad 1/3/7 views (Ctrl reverses) · 5 perspective/ortho
+            <br />
+            Numpad 2/4/6/8 orbit · 9 opposite · +/− zoom
           </dd>
           <dt>History & files</dt>
           <dd>

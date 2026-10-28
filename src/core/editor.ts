@@ -21,15 +21,20 @@ import { loadGLB, disposeModel } from "../import/model";
 import { demoModel } from "../import/demo";
 import { decodeImage, pickFile } from "../import/files";
 import { exportPNG } from "../export/png";
+import { syncMaterial } from "../render/material";
+import { transferAlpha } from "../tools/alpha-transfer";
+import { loadPreferences, preferenceKey } from "./preferences";
 
 export class Editor {
   docs = new Map<string, TextureDocument>();
+  textureDocuments = new Map<string, TextureDocument>();
   histories = new Map<string, History>();
   activeId = "";
   model: ModelAsset | null = null;
   tool: Tool = "move";
   selectionMode: SelectionMode = "replace";
   color = "#f06b4f";
+  backgroundColor = "#ffffff";
   brushSize = 32;
   brushOpacity = 1;
   tolerance = 24;
@@ -37,9 +42,13 @@ export class Editor {
   uvVisible = true;
   uvColor = "#a5ece0";
   uvOpacity = 0.65;
+  textScale = 1.6;
+  previewMode: "unlit" | "studio" = "studio";
+  previewEdges = false;
   transform: TransformSession | null = null;
   cloneSource: Point | null = null;
   message = "Open a GLB to start, or create a texture.";
+  notice: { id: number; text: string } | null = null;
   error = "";
   busy = false;
   revision = 0;
@@ -48,6 +57,41 @@ export class Editor {
   output: HTMLCanvasElement | null = null;
   private listeners = new Set<() => void>();
   private warpInstance: WarpRenderer | null = null;
+  constructor() {
+    const preferences = loadPreferences();
+    this.uvColor = preferences.uvColor;
+    this.uvOpacity = preferences.uvOpacity;
+    this.textScale = preferences.textScale;
+  }
+  setUVAppearance(patch: { uvColor?: string; uvOpacity?: number }) {
+    if (patch.uvColor !== undefined && /^#[0-9a-f]{6}$/i.test(patch.uvColor))
+      this.uvColor = patch.uvColor;
+    if (patch.uvOpacity !== undefined && Number.isFinite(patch.uvOpacity))
+      this.uvOpacity = Math.max(0, Math.min(1, patch.uvOpacity));
+    this.savePreferences();
+  }
+  setTextScale(value: number) {
+    if (!Number.isFinite(value)) return;
+    this.textScale = Math.max(0.8, Math.min(2.2, value));
+    this.savePreferences();
+  }
+  private savePreferences() {
+    try {
+      localStorage.setItem(
+        preferenceKey,
+        JSON.stringify({
+          uvColor: this.uvColor,
+          uvOpacity: this.uvOpacity,
+          textScale: this.textScale,
+        }),
+      );
+    } catch {
+      this.fail(
+        "Settings apply to this session, but could not be saved for the next launch.",
+      );
+    }
+    this.emit();
+  }
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
     return () => {
@@ -62,9 +106,14 @@ export class Editor {
     return this.doc?.layers.find((l) => l.id === this.doc!.activeId) ?? null;
   }
   get history() {
-    if (!this.histories.has(this.activeId))
-      this.histories.set(this.activeId, new History());
-    return this.histories.get(this.activeId)!;
+    const key = this.documentKey(this.doc);
+    if (!this.histories.has(key)) this.histories.set(key, new History());
+    return this.histories.get(key)!;
+  }
+  private documentKey(doc: TextureDocument | null) {
+    return doc?.textureUsage && doc.textureUsage !== "Base Color"
+      ? `${doc.id}:${doc.sourceIndex}`
+      : (doc?.id ?? this.activeId);
   }
   get warp() {
     return this.warpInstance ?? (this.warpInstance = new WarpRenderer());
@@ -75,8 +124,7 @@ export class Editor {
       this.output = composite(this.doc, this.output ?? undefined);
       const slot = this.model?.slots.find((s) => s.id === this.activeId);
       if (slot) {
-        slot.texture.image = this.output;
-        slot.texture.needsUpdate = true;
+        syncMaterial(slot, this.doc, this.output);
       }
     }
     this.revision++;
@@ -84,6 +132,7 @@ export class Editor {
   }
   notify(message: string) {
     this.message = message;
+    this.notice = { id: (this.notice?.id ?? 0) + 1, text: message };
     this.emit();
   }
   fail(error: unknown) {
@@ -134,8 +183,12 @@ export class Editor {
     if (this.model) disposeModel(this.model);
     this.model = model;
     this.docs.clear();
+    this.textureDocuments.clear();
     this.histories.clear();
     for (const d of docs) this.docs.set(d.id, d);
+    for (const slot of model.slots)
+      for (const doc of slot.documents)
+        this.textureDocuments.set(this.documentKey(doc), doc);
     this.activeId = docs[0].id;
     this.transform = null;
     this.cloneSource = null;
@@ -154,7 +207,9 @@ export class Editor {
         d.layers = d.layers.map((l) => {
           const c = canvas(w, h);
           context(c).drawImage(l.canvas, 0, 0, w, h);
-          return { ...l, canvas: c };
+          const uvMask = l.uvMask ? canvas(w, h) : null;
+          if (uvMask) context(uvMask).drawImage(l.uvMask!, 0, 0, w, h);
+          return { ...l, canvas: c, uvMask, placement: undefined };
         });
       });
     } else {
@@ -180,6 +235,25 @@ export class Editor {
   selectMaterial(id: string) {
     this.confirmTransform();
     this.activeId = id;
+    this.output = null;
+    this.cloneSource = null;
+    this.emit(true);
+  }
+  selectTexture(sourceIndex: number) {
+    const slot = this.model?.slots.find((s) => s.id === this.activeId);
+    if (!slot || !this.doc) return;
+    const template = slot.documents.find(
+      (d) => (d.sourceIndex ?? -1) === sourceIndex,
+    );
+    if (!template) return;
+    const targetKey = this.documentKey(template);
+    if (targetKey === this.documentKey(this.doc)) return;
+    this.confirmTransform();
+    this.textureDocuments.set(this.documentKey(this.doc), this.doc);
+    this.docs.set(
+      this.activeId,
+      this.textureDocuments.get(targetKey) ?? template,
+    );
     this.output = null;
     this.cloneSource = null;
     this.emit(true);
@@ -227,7 +301,8 @@ export class Editor {
       const c = canvas(d.width, d.height);
       const ctx = context(c);
       ctx.drawImage(image, 0, 0);
-      const l = this.makeLayer(masked(c, editingMask(d, false)), name);
+      const l = this.makeLayer(c, name);
+      l.uvMask = editingMask(d, false);
       d.layers.push(l);
       d.activeId = l.id;
       d.selection = null;
@@ -240,7 +315,7 @@ export class Editor {
         { x: 0, y: image.height },
       ];
     this.transform = {
-      kind: "perspective",
+      kind: "free",
       source: image,
       rest: canvas(d.width, d.height),
       points,
@@ -250,6 +325,7 @@ export class Editor {
       clip: editingMask(d, false),
     };
     this.tool = "move";
+    this.updateTransform(points);
     this.notify(
       `Imported ${image.width} × ${image.height} at native size. Full source retained while placing; Enter applies.`,
     );
@@ -301,6 +377,8 @@ export class Editor {
         ...lower,
         name: lower.name + " + " + upper.name,
         canvas: merged,
+        uvMask: null,
+        placement: undefined,
         opacity: 1,
         blend: "source-over",
         visible: true,
@@ -376,10 +454,8 @@ export class Editor {
     this.change("Paste", (d) => {
       const c = canvas(d.width, d.height);
       context(c).drawImage(this.clipboard!, 0, 0);
-      const l = this.makeLayer(
-        masked(c, editingMask(d, false)),
-        "Pasted fragment",
-      );
+      const l = this.makeLayer(c, "Pasted fragment");
+      l.uvMask = editingMask(d, false);
       d.layers.push(l);
       d.activeId = l.id;
       d.selection = null;
@@ -389,7 +465,8 @@ export class Editor {
     if (!this.doc || !this.layer) return;
     this.change("Clear pixels", (d) => {
       const l = d.layers.find((l) => l.id === d.activeId)!;
-      const mask = editingMask(d);
+      // Clearing a selection must also remove imported pixels outside UV islands.
+      const mask = d.selection;
       l.canvas = mask
         ? masked(l.canvas, mask, true)
         : canvas(d.width, d.height);
@@ -437,11 +514,56 @@ export class Editor {
     this.emit();
   }
   selectUVSet(value: string) {
+    const slot = this.model?.slots.find((s) => s.id === this.activeId);
+    if (!slot?.uvSets.includes(value)) return;
+    const candidates = slot.sourceTextures
+      .map((source, index) => ({ source, index }))
+      .filter((t) => t.source.uvSet === value);
+    const target =
+      candidates.find((t) => t.index === this.doc?.sourceIndex) ??
+      candidates[0];
+    if (target && target.index !== this.doc?.sourceIndex) {
+      this.selectTexture(target.index);
+      this.notify(
+        `${slot.uvLabels[value] ?? value}: opened ${target.source.name}.`,
+      );
+      return;
+    }
+    if (this.doc?.uvSet === value) return;
     this.change("UV set", (d) => {
       d.uvSet = value;
       d.selectedIslands = [];
       if (this.model) d.islands = extractIslands(this.model.scene, d.id, value);
     });
+    this.notify(
+      `${slot.uvLabels[value] ?? value}: ${target ? "texture mapping updated" : "no linked image; showing the current texture on this UV map"}.`,
+    );
+  }
+  transferMaterialAlpha(sourceIndex: number, sourceUV: string) {
+    const slot = this.model?.slots.find((s) => s.id === this.activeId);
+    if (!this.model || !this.doc || !this.layer || !slot) return;
+    const source = slot.sourceTextures[sourceIndex];
+    if (!source) throw new Error("Choose an embedded source texture.");
+    const alpha = transferAlpha(
+      this.model,
+      this.doc,
+      source,
+      sourceUV,
+      this.warp,
+    );
+    this.change("Transfer alpha between UV maps", (doc) => {
+      const layer = doc.layers.find((l) => l.id === doc.activeId)!;
+      const result = cloneCanvas(layer.canvas),
+        ctx = context(result);
+      const pixels = ctx.getImageData(0, 0, doc.width, doc.height),
+        mask = context(alpha).getImageData(0, 0, doc.width, doc.height).data;
+      for (let i = 3; i < pixels.data.length; i += 4) pixels.data[i] = mask[i];
+      ctx.putImageData(pixels, 0, 0);
+      layer.canvas = result;
+    });
+    this.notify(
+      `Alpha transferred from ${source.name} (${sourceUV}) to ${this.doc.uvSet}. RGB unchanged. Undo: Ctrl+Z.`,
+    );
   }
   selectIsland(id: number, add = false) {
     this.change("Select UV island", (d) => {
@@ -460,14 +582,42 @@ export class Editor {
     this.tool = tool;
     this.emit();
   }
-  beginTransform(kind: "perspective" | "mesh" = "perspective") {
+  beginTransform(kind: "free" | "perspective" | "mesh" = "free") {
     if (this.transform) {
       if (this.transform.kind === kind) return;
+      if (this.transform.kind !== "mesh" && kind !== "mesh") {
+        this.transform.kind = kind;
+        this.emit();
+        return;
+      }
       this.confirmTransform();
     }
     if (!this.doc || !this.layer) return;
     const before = snapshot(this.doc),
-      selection = editingMask(this.doc);
+      selection = this.doc.selection;
+    // Reuse the full source after applying a placement, including off-canvas
+    // pixels. Pixel edits replace the rendered canvas and invalidate this cache.
+    const placement = this.layer.placement;
+    if (
+      !selection &&
+      placement?.rendered === this.layer.canvas &&
+      (placement.kind === "mesh") === (kind === "mesh")
+    ) {
+      const points = placement.points.map((p) => ({ ...p }));
+      this.transform = {
+        kind,
+        source: placement.source,
+        rest: placement.rest,
+        points,
+        original: points.map((p) => ({ ...p })),
+        before,
+        layerId: this.layer.id,
+        clip: editingMask(this.doc, false),
+      };
+      this.tool = "move";
+      this.updateTransform(points);
+      return;
+    }
     const picked = masked(this.layer.canvas, selection);
     const bounds = alphaBounds(picked);
     if (!bounds) {
@@ -493,7 +643,7 @@ export class Editor {
       : canvas(this.doc.width, this.doc.height);
     const { x, y, width: w, height: h } = bounds;
     const points =
-      kind === "perspective"
+      kind !== "mesh"
         ? [
             { x, y },
             { x: x + w, y },
@@ -515,6 +665,7 @@ export class Editor {
       clip: editingMask(this.doc, false),
     };
     this.tool = "move";
+    this.updateTransform(points);
     this.notify(
       "Drag handles or the fragment. Enter applies · Escape cancels.",
     );
@@ -527,14 +678,24 @@ export class Editor {
       const warped = this.warp.render(
         t.source,
         points,
-        t.kind,
+        t.kind === "mesh" ? "mesh" : "perspective",
         d.width,
         d.height,
       );
       const c = cloneCanvas(t.rest);
-      context(c).drawImage(masked(warped, t.clip), 0, 0);
+      context(c).drawImage(warped, 0, 0);
+      t.outside = t.clip ? masked(warped, t.clip, true) : undefined;
       const next = snapshot(d);
-      next.layers.find((l) => l.id === t.layerId)!.canvas = c;
+      const layer = next.layers.find((l) => l.id === t.layerId)!;
+      layer.canvas = c;
+      layer.uvMask = t.clip;
+      layer.placement = t.before.selection ? undefined : {
+        source: t.source,
+        rest: t.rest,
+        points: points.map((p) => ({ ...p })),
+        kind: t.kind,
+        rendered: c,
+      };
       this.docs.set(this.activeId, next);
       t.points = points;
       this.emit(true);
@@ -544,7 +705,7 @@ export class Editor {
     }
   }
   adjustTransform(sx: number, sy: number, degrees = 0) {
-    this.beginTransform(this.transform?.kind ?? "perspective");
+    this.beginTransform(this.transform?.kind ?? "free");
     const t = this.transform;
     if (!t) return;
     const cx = t.points.reduce((a, p) => a + p.x, 0) / t.points.length,
@@ -564,7 +725,11 @@ export class Editor {
   confirmTransform() {
     if (!this.transform) return;
     this.history.push(
-      this.transform.kind === "mesh" ? "Mesh warp" : "Perspective transform",
+      this.transform.kind === "mesh"
+        ? "Mesh warp"
+        : this.transform.kind === "free"
+          ? "Free transform"
+          : "Perspective transform",
       this.transform.before,
     );
     if (this.doc) this.doc.selection = null;

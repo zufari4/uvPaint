@@ -11,6 +11,8 @@ app.whenReady().then(() => {
     minHeight: 720,
     backgroundColor: "#17191d",
     title: "UV Paint",
+    frame: false,
+    show: false,
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
@@ -80,6 +82,29 @@ app.whenReady().then(() => {
   ipcMain.handle("system:memory", (event) => {
     validate(event);
     return freemem();
+  });
+  ipcMain.handle("window:state", (event) => {
+    validate(event);
+    return { maximized: win.isMaximized() };
+  });
+  ipcMain.handle("window:action", (event, action) => {
+    validate(event);
+    if (action === "minimize") win.minimize();
+    else if (action === "maximize") {
+      if (win.isMaximized()) win.unmaximize();
+      else win.maximize();
+    } else if (action === "close") win.close();
+    else throw new Error("Invalid window action");
+  });
+  const publishWindowState = () =>
+    win.webContents.send("window:state-changed", {
+      maximized: win.isMaximized(),
+    });
+  win.on("maximize", publishWindowState);
+  win.on("unmaximize", publishWindowState);
+  win.once("ready-to-show", () => {
+    win.maximize();
+    win.show();
   });
   if (process.env.UVPAINT_DEV_URL) win.loadURL(process.env.UVPAINT_DEV_URL);
   else win.loadFile(join(__dirname, "../dist/index.html"));

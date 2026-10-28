@@ -12,8 +12,11 @@
     "start": "electron .",
     "test": "vitest run",
     "test:e2e": "node scripts/e2e.mjs",
+    "test:materials": "node scripts/regression-material.mjs",
+    "test:interaction": "node scripts/regression-interaction.mjs",
+    "test:workspace": "node scripts/regression-workspace.mjs",
     "test:packaged": "node scripts/packaged-smoke.mjs",
-    "dist": "npm run build && electron-builder --win portable --x64"
+    "dist": "npm run build && electron-builder --win --x64 --dir"
   },
   "dependencies": {
     "lucide-react": "^0.577.0",
@@ -39,7 +42,7 @@
     "appId": "studio.uvpaint.desktop",
     "productName": "UV Paint",
     "directories": {
-      "output": "release"
+      "output": "release/current"
     },
     "files": [
       "dist/**/*",
@@ -48,11 +51,7 @@
     ],
     "asar": true,
     "win": {
-      "target": "portable",
       "signAndEditExecutable": false
-    },
-    "portable": {
-      "artifactName": "UV-Paint-${version}-Windows-x64.exe"
     }
   }
 }

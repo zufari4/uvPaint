@@ -41,13 +41,22 @@ export function LayersPanel() {
         <span>
           <Layers size={14} /> LAYERS <b>{d?.layers.length ?? 0}</b>
         </span>
-        <Button
-          title="Import image layer"
-          disabled={!d}
-          onClick={() => void e.run(() => e.openImage())}
-        >
-          <ImagePlus size={15} />
-        </Button>
+        <div className="mini-actions">
+          <Button
+            title="New empty layer"
+            disabled={!d}
+            onClick={() => e.addEmpty()}
+          >
+            <Plus size={15} />
+          </Button>
+          <Button
+            title="Import image layer"
+            disabled={!d}
+            onClick={() => void e.run(() => e.openImage())}
+          >
+            <ImagePlus size={15} />
+          </Button>
+        </div>
       </div>
       <div className="layer-properties">
         <select
@@ -137,13 +146,6 @@ export function LayersPanel() {
         )}
       </div>
       <div className="layer-footer">
-        <Button
-          title="New empty layer"
-          disabled={!d}
-          onClick={() => e.addEmpty()}
-        >
-          <Plus size={15} />
-        </Button>
         <Button
           title="Duplicate layer"
           disabled={!l}

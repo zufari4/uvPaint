@@ -1,5 +1,5 @@
 import type { TextureDocument } from "../types";
-import { canvas, context } from "../core/canvas";
+import { canvas, context, masked } from "../core/canvas";
 export function composite(doc: TextureDocument, target?: HTMLCanvasElement) {
   const c =
     target && target.width === doc.width && target.height === doc.height
@@ -11,7 +11,7 @@ export function composite(doc: TextureDocument, target?: HTMLCanvasElement) {
     if (!l.visible) continue;
     ctx.globalAlpha = l.opacity;
     ctx.globalCompositeOperation = l.blend;
-    ctx.drawImage(l.canvas, 0, 0);
+    ctx.drawImage(l.uvMask ? masked(l.canvas, l.uvMask) : l.canvas, 0, 0);
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = "source-over";

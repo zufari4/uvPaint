@@ -6,10 +6,11 @@ import {
   FlipVertical2,
   RotateCw,
   Scissors,
-  Copy,
-  Clipboard,
   Scan,
   Grid2X2,
+  SquareDashed,
+  SquarePlus,
+  SquareMinus,
 } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
@@ -40,20 +41,57 @@ export function OptionsBar() {
           }[e.tool]
         }
       </span>
-      {selection && (
-        <>
-          <select
-            aria-label="Selection mode"
-            value={e.selectionMode}
+      {["brush", "fill", "eyedropper"].includes(e.tool) && (
+        <label className="color-swatch" title="Paint color">
+          <input
+            aria-label="Paint color"
+            type="color"
+            value={e.color}
             onChange={(ev) => {
-              e.selectionMode = ev.target.value as typeof e.selectionMode;
+              e.color = ev.target.value;
               e.emit();
             }}
+          />
+        </label>
+      )}
+      {!selection && e.doc?.selection && (
+        <Button title="Clear selection (Ctrl+D)" onClick={() => e.deselect()}>
+          Clear selection
+        </Button>
+      )}
+      {!selection && e.doc?.restrict && (
+        <span className="options-hint">
+          UV clipping: {e.doc.selectedIslands.length || "all"} islands
+        </span>
+      )}
+      {selection && (
+        <>
+          <div
+            className="selection-modes"
+            role="group"
+            aria-label="Selection mode"
           >
-            <option value="replace">New selection</option>
-            <option value="add">Add to selection</option>
-            <option value="subtract">Subtract selection</option>
-          </select>
+            {(
+              [
+                ["replace", SquareDashed, "New selection"],
+                ["add", SquarePlus, "Add to selection (Shift)"],
+                ["subtract", SquareMinus, "Subtract selection (Alt)"],
+              ] as const
+            ).map(([mode, Icon, title]) => (
+              <Button
+                key={mode}
+                title={title}
+                active={e.selectionMode === mode}
+                aria-pressed={e.selectionMode === mode}
+                onClick={() => {
+                  e.selectionMode = mode;
+                  e.emit();
+                }}
+              >
+                <Icon size={16} />
+              </Button>
+            ))}
+          </div>
           <Button
             title="Invert selection (Ctrl+Shift+I)"
             onClick={() => e.invert()}
@@ -64,7 +102,7 @@ export function OptionsBar() {
             Deselect
           </Button>
           <Button
-            title="Extract selection to new layer (Ctrl+J)"
+            title="Extract selection to new layer (Ctrl+Shift+J)"
             onClick={() => e.copy(false, true)}
           >
             <Scissors size={14} /> Extract
@@ -117,7 +155,7 @@ export function OptionsBar() {
             px
           </label>
           <label>
-            Flow{" "}
+            Opacity{" "}
             <input
               aria-label="Brush opacity"
               type="number"
@@ -141,6 +179,14 @@ export function OptionsBar() {
       )}
       {e.tool === "move" && (
         <>
+          <Button
+            title="Free transform (Ctrl+T)"
+            active={e.transform?.kind === "free"}
+            disabled={!e.layer}
+            onClick={() => e.beginTransform("free")}
+          >
+            Free transform
+          </Button>
           <Button
             title="Four-corner perspective"
             active={e.transform?.kind === "perspective"}
@@ -249,7 +295,7 @@ export function OptionsBar() {
         <span className="options-hint">Drag the canvas · Scroll to zoom</span>
       )}
       <div className="spacer" />
-      {e.transform ? (
+      {e.transform && (
         <>
           <Button
             title="Apply transform (Enter)"
@@ -265,24 +311,13 @@ export function OptionsBar() {
             <X size={15} />
           </Button>
         </>
-      ) : (
-        <>
-          <Button
-            title="Copy (Ctrl+C)"
-            disabled={!e.layer}
-            onClick={() => e.copy()}
-          >
-            <Copy size={14} />
-          </Button>
-          <Button
-            title="Paste (Ctrl+V)"
-            disabled={!e.clipboard}
-            onClick={() => e.paste()}
-          >
-            <Clipboard size={14} />
-          </Button>
-        </>
       )}
+      <div className="texture-meta mini-actions">
+        <span>
+          {e.doc ? `${e.doc.width} × ${e.doc.height}` : "RGBA canvas"}
+        </span>
+        <span className="tag">sRGB</span>
+      </div>
     </div>
   );
 }

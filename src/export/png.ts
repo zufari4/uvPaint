@@ -3,7 +3,8 @@ import { composite } from "../render/composite";
 import { toPNG } from "../core/canvas";
 export async function exportPNG(doc: TextureDocument) {
   const blob = await toPNG(composite(doc));
-  const name = `${doc.name.replace(/[^\w\- ]/g, "_")}_BaseColor.png`;
+  const usage = (doc.textureUsage ?? "BaseColor").replace(/\s/g, "");
+  const name = `${doc.name.replace(/[^\w\- ]/g, "_")}_${usage}.png`;
   if (window.desktop)
     return window.desktop.savePNG(
       new Uint8Array(await blob.arrayBuffer()),

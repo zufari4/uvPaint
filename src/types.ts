@@ -14,8 +14,23 @@ export type Layer = {
   opacity: number;
   blend: Blend;
   canvas: HTMLCanvasElement;
+  uvMask?: HTMLCanvasElement | null;
+  placement?: {
+    source: HTMLCanvasElement;
+    rest: HTMLCanvasElement;
+    points: Point[];
+    kind: "free" | "perspective" | "mesh";
+    rendered: HTMLCanvasElement;
+  };
 };
 export type Island = { id: number; triangles: Point[][] };
+export type AlphaMode = "OPAQUE" | "MASK" | "BLEND";
+export type SourceTexture = {
+  name: string;
+  usage: string;
+  uvSet: string;
+  texture: THREE.Texture;
+};
 export type TextureDocument = {
   id: string;
   name: string;
@@ -28,14 +43,24 @@ export type TextureDocument = {
   islands: Island[];
   selectedIslands: number[];
   restrict: boolean;
+  alphaMode?: AlphaMode;
+  alphaCutoff?: number;
+  uvNames?: Record<string, string>;
+  sourceIndex?: number;
+  textureUsage?: string;
+  textureName?: string;
 };
 export type MaterialSlot = {
   id: string;
   name: string;
   original: THREE.MeshStandardMaterial;
   preview: THREE.MeshBasicMaterial;
+  studio: THREE.MeshStandardMaterial;
   texture: THREE.CanvasTexture;
   uvSets: string[];
+  sourceTextures: SourceTexture[];
+  uvLabels: Record<string, string>;
+  documents: TextureDocument[];
 };
 export type ModelAsset = {
   name: string;
@@ -58,7 +83,7 @@ export type Tool =
   | "pan";
 export type SelectionMode = "replace" | "add" | "subtract";
 export type TransformSession = {
-  kind: "perspective" | "mesh";
+  kind: "free" | "perspective" | "mesh";
   source: HTMLCanvasElement;
   rest: HTMLCanvasElement;
   points: Point[];
@@ -66,6 +91,7 @@ export type TransformSession = {
   before: TextureDocument;
   layerId: string;
   clip: HTMLCanvasElement | null;
+  outside?: HTMLCanvasElement;
 };
 declare global {
   interface Window {
@@ -75,6 +101,11 @@ declare global {
       ): Promise<{ name: string; bytes: Uint8Array } | null>;
       savePNG(bytes: Uint8Array, name: string): Promise<string | null>;
       memory(): Promise<number>;
+      windowState(): Promise<{ maximized: boolean }>;
+      windowAction(action: "minimize" | "maximize" | "close"): Promise<void>;
+      onWindowState(
+        callback: (state: { maximized: boolean }) => void,
+      ): () => void;
     };
   }
 }
