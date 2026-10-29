@@ -6,7 +6,7 @@ type Corner = typeof corners[number];
 const key = "uvpaint.layersDock";
 function initialCorner(): Corner {
   try { const saved = localStorage.getItem(key); if (corners.includes(saved as Corner)) return saved as Corner; } catch { /* Use the default when storage is unavailable. */ }
-  return "bottom-right";
+  return "top-right";
 }
 export function LayersDock() {
   const [dock, setDock] = useState<Corner>(initialCorner);

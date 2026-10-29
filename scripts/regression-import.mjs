@@ -35,12 +35,13 @@ try {
     let p=await coords(...points[0]);await page.mouse.move(p.x,p.y);await page.mouse.down();
     for(const q of points.slice(1)){p=await coords(...q);await page.mouse.move(p.x,p.y,{steps:5});}await page.mouse.up();
   };
-  const apply=async()=>{await page.getByRole('button',{name:'Import selected area',exact:true}).click();await dialog.waitFor({state:'hidden'});};
+  const apply=async()=>{await page.getByRole('button',{name:'Next',exact:true}).click();await dialog.waitFor({state:'hidden'});};
   const confirm=()=>page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');e.confirmTransform();});
   const layers=await page.locator('.layers-sidebar').boundingBox(), texture=await page.locator('.texture-pane').boundingBox();
-  check(layers.x>texture.x && layers.y>texture.y && layers.width<=301 && layers.height<=301 && layers.x+layers.width<=texture.x+texture.width+1,'Compact Layers panel occupies the bottom-right corner inside the texture editor');
+  check(layers.x>texture.x && layers.y>=texture.y && layers.width<=301 && layers.height<=301 && layers.x+layers.width<=texture.x+texture.width+1,'Compact Layers panel stays inside the texture editor');
   check(await page.locator('.layer-footer').getByTitle('New empty layer',{exact:true}).count()===1&&
     await page.locator('.layer-footer').getByTitle('Import image layer',{exact:true}).count()===1,'New layer and image import buttons are in the bottom toolbar');
+  check(await page.locator('.layer-footer > button').nth(0).getAttribute('title')==='Import image layer'&&await page.locator('.layer-footer > button').nth(1).getAttribute('title')==='New empty layer','Layer footer starts with image import, followed by new layer');
   const initial=await state();await open();
   check(await page.getByLabel('Import target layer',{exact:true}).inputValue()==='','Image import defaults to a new layer');
   check(await page.getByRole('toolbar',{name:'Import selection tools'}).locator('button[aria-pressed]').count()===4,'Import dialog offers four selection tools');
@@ -49,6 +50,9 @@ try {
   await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
   check((await state()).count===initial.count && (await state()).pixels===initial.pixels,'Canceling image import makes no document changes');
   await open();await draw([[8,8],[24,24]]);
+  await draw([[24,24],[32,28]]);
+  check(await dialog.getByText('24 × 20 px',{exact:true}).count()===1,'Import rectangle corner handle resizes the selection');
+  await draw([[32,28],[24,24]]);
   await page.getByLabel('Import target layer',{exact:true}).selectOption(initial.id);
   await apply();let s=await state();
   check(s.count===initial.count&&s.id===initial.id&&Math.abs(s.transform.width-16)<=1&&Math.abs(s.transform.height-16)<=1,'Rectangle imports the selected source pixels into the chosen existing layer');
@@ -57,9 +61,10 @@ try {
   check(s.count===initial.count+1&&Math.abs(s.transform.width-32)<=1&&s.transform.corner[3]===0,'Lasso import preserves a non-rectangular transparent cutout');
   await confirm();await open();await page.getByTitle('Polygon (Shift+L)',{exact:true}).click();
   for(const q of [[8,8],[40,8],[40,40],[8,40]])await clickPoint(...q);
-  check(await page.getByRole('button',{name:'Import selected area',exact:true}).isDisabled(),'Unfinished polygon cannot accidentally import the entire image');
-  await page.keyboard.press('Enter');await apply();s=await state();
-  check(Math.abs(s.transform.width-32)<=1&&Math.abs(s.transform.height-32)<=1,'Polygon selection finishes with Enter and imports its bounds');
+  check(await page.getByRole('button',{name:'Next',exact:true}).isDisabled(),'Unfinished polygon cannot accidentally import the entire image');
+  check(await page.getByRole('button',{name:'Add',exact:true}).isDisabled(),'Add also waits until the polygon is finished');
+  await page.keyboard.press('Enter');await draw([[40,40],[48,40]]);await apply();s=await state();
+  check(Math.abs(s.transform.width-40)<=1&&Math.abs(s.transform.height-32)<=1,'Closed polygon vertex can be dragged before importing');
   await confirm();await open();await dialog.getByTitle('Magic wand (W)',{exact:true}).click();await page.getByLabel('Import wand tolerance',{exact:true}).fill('0');await clickPoint(8,32);await apply();s=await state();
   check(s.transform.width===32&&s.transform.height===64&&s.transform.corner[0]===255,'Magic wand selects and imports only the matching color region');
   await confirm();await open();await draw([[8,8],[24,24]]);await page.getByTitle('Whole image (Ctrl+A)',{exact:true}).click();await apply();s=await state();

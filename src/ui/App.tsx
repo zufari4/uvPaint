@@ -27,7 +27,7 @@ export function App() {
   const [dialog, setDialog] = useState<
       "size" | "help" | "settings" | "about" | null
     >(null),
-    [split, setSplit] = useState(60);
+    [split, setSplit] = useState(70);
   const [expandedView, setExpandedView] = useState<"texture" | "preview" | null>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);

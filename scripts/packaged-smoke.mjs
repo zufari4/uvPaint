@@ -26,7 +26,8 @@ try {
   await page.waitForSelector(".model-title");
   await page.waitForTimeout(500);
   assert.equal(await page.locator(".layer-row").count(), 1);
-  assert.equal(await page.getByLabel("Layer UV island", { exact: true }).locator("option").count(), 7);
+  assert.equal(await page.getByLabel("Layer UV island", { exact: true }).count(), 0);
+  assert.equal(await page.locator('.layer-footer').getByTitle('Pick UV island from canvas or model',{exact:true}).isEnabled(),true);
   assert.equal(await page.locator(".uv-panel").count(), 0);
   assert.equal(await page.locator(".error-toast").count(), 0);
   const output = path.resolve("test-results/packaged-export.png");
@@ -52,7 +53,7 @@ try {
   await page.getByRole("dialog", { name: "Import image", exact: true }).waitFor();
   assert.equal(await page.getByLabel("Import target layer", { exact: true }).inputValue(), "");
   assert.equal(await page.getByRole("toolbar", { name: "Import selection tools" }).locator("button[aria-pressed]").count(), 4);
-  await page.getByRole('button',{name:'Import selected area',exact:true}).click();
+  await page.getByRole('button',{name:'Next',exact:true}).click();
   await page.getByTestId('import-island-preview').waitFor();
   assert.equal(await page.getByRole('button',{name:'Import linked image',exact:true}).isDisabled(), true);
   await page.keyboard.press("Escape");

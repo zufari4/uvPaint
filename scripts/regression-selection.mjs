@@ -63,7 +63,10 @@ try {
   await page.getByTitle('Fit canvas', { exact: true }).click();
   const click = async (x, y, shift = false) => { const p = await coords(x, y); if (shift) await page.keyboard.down('Shift'); await page.mouse.click(p.x, p.y); if (shift) await page.keyboard.up('Shift'); };
   await click(64, 64);
-  check(await page.evaluate(() => e.layer.id === window.leftLayer && e.doc.selectedIslands[0] === 0 && !e.transform && e.history.undoStack.length === window.pixelHistory), 'Move-tool click selects the island and linked layer without a transform or pixel undo step');
+  check(await page.evaluate(() => e.layer.id === window.leftLayer && e.doc.selectedIslands[0] === 0 && !!e.transform && e.history.undoStack.length === window.pixelHistory), 'Move-tool click selects the island and linked layer and opens its transform frame');
+  await click(220,220);
+  check(await page.evaluate(()=>!e.transform&&!e.doc.selectedIslands.length),'Clicking blank space inside a transform frame clears island selection and closes the frame');
+  await click(64,64);
   await click(192, 64, true);
   check(await page.evaluate(() => e.layer.id === window.rightLayer && e.doc.selectedIslands.length === 2), 'Shift-click keeps multiple islands selected while choosing the linked layer');
   await page.evaluate(() => { e.selectLayer(window.leftLayer); e.doc.selectedIslands = []; });

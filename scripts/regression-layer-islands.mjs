@@ -1,6 +1,6 @@
 import { _electron as electron } from "playwright";
 import { createServer } from "vite";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 const server = await createServer();
 await server.listen();
@@ -81,17 +81,36 @@ try {
   });
   results.forEach(label=>console.log("PASS",label));
   await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');await e.sample();e.setTool('brush');});
-  const dropdown = page.getByLabel("Layer UV island",{exact:true});
   check(await page.locator(".uv-panel,.island-list").count() === 0, "UV Guides panel is removed");
-  check(await dropdown.locator('option').count() === 7, "Layer dropdown contains every UV island and unlink option");
-  await dropdown.selectOption('uv:1');
+  check(await page.locator('.layer-island-binding').count()===0 && await page.getByLabel('Layer UV island',{exact:true}).count()===0,'UV binding dropdown row is removed');
+  check(await page.locator('.layer-footer').getByTitle('Pick UV island from canvas or model',{exact:true}).locator('svg.lucide-square-mouse-pointer').count()===1,'UV picking uses a region-and-cursor icon in the layer footer');
+  await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');e.setLayerIsland(1);});
   const state = () => page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');return {binding:e.layer.uvBinding?.island.id,picking:e.pickingLayerIsland,pixels:e.layer.canvas.toDataURL(),history:e.history.undoStack.length,mode:e.uvDisplay};});
-  check((await state()).binding === 1, "Dropdown binds the active layer");
+  check((await state()).binding === 1, "Binding is retained without the dropdown");
   await page.getByTitle('New empty layer',{exact:true}).click();
-  check(await dropdown.inputValue() === '', "New empty layers start without a linked island");
-  await dropdown.selectOption('uv:2');
+  check((await state()).binding===undefined, "New empty layers start without a linked island");
+  await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');e.setLayerIsland(2);});
   await page.locator('.layer-row').last().click();
-  check(await dropdown.inputValue() === 'uv:1', "Selecting another layer restores its own dropdown value");
+  check((await state()).binding === 1, "Selecting another layer restores its own UV binding");
+  check(await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');return e.visibleIslands.length===1&&e.visibleIslands[0].id===1&&e.textureHiddenFaces.size===22&&e.hiddenFaces.size===0&&e.model.parts.every(p=>p.geometry.index.count===36);}),
+    'Selecting a bound layer isolates 2D pixels and guides while all 3D faces remain visible');
+  const isolation = await page.evaluate(async()=>{
+    const {Editor}=await import('/src/core/editor.ts'); const e=new Editor(); await e.sample();
+    e.setLayerIsland(0); const first=e.layer.id; e.addEmpty();const unbound=e.layer.id;e.addEmpty();e.setLayerIsland(1);const second=e.layer.id;
+    const history=e.history.undoStack.length,pixels=e.output.toDataURL();
+    e.selectLayer(first);const firstHidden=[...e.textureHiddenFaces];
+    e.selectLayer(second);const switches=e.visibleIslands.length===1&&e.visibleIslands[0].id===1;
+    e.doc.uvSet='uv1';e.selectLayer(first);const otherUV=JSON.stringify([...e.textureHiddenFaces])===JSON.stringify(firstHidden);
+    e.selectLayer(unbound);const all=e.textureHiddenFaces.size===0;
+    e.selectIsland(3);e.setIslandVisibility('except');const manual=e.hiddenFaces;
+    e.selectLayer(first);e.selectLayer(unbound);
+    return {switches,otherUV,all,unchanged:e.output.toDataURL()===pixels&&e.history.undoStack.length===history,manual:e.hiddenFaces===manual&&manual.size===2};
+  });
+  check(isolation.switches&&isolation.otherUV,'Changing bound layers reveals their own faces, including bindings on another UV map');
+  check(isolation.all&&isolation.unchanged,'Unbound layer restores all islands; layer selection preserves pixels and undo history');
+  check(isolation.manual,'Selecting layers preserves explicit 3D hiding');
+  const showAll=()=>page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');e.setIslandVisibility('all');});
+  await showAll();
   const before = await state();
   const picker = () => page.getByTitle('Pick UV island from canvas or model',{exact:true});
   await picker().click();
@@ -116,12 +135,14 @@ try {
   });
   const active=()=>page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');return {id:e.layer.id,selected:e.doc.selectedIslands,history:e.history.undoStack.length,pixels:e.output.toDataURL()};});
   const historyBeforeClick=(await active()).history;
+  await showAll();
   await page.getByTestId('preview-canvas').click();
   check((await active()).id===layers.top&&(await active()).selected[0]===4,'Ordinary 3D click selects the corresponding island and top linked visible layer');
   check((await active()).history===historyBeforeClick,'3D layer selection does not create pixel undo entries');
   await page.evaluate(async id=>{const {editor:e}=await import('/src/core/editor.ts');e.selectLayer(id);},layers.first);
   await page.getByTestId('preview-canvas').click();
   check((await active()).id===layers.first,'3D click retains the active layer when it is already bound to the clicked island');
+  await showAll();
   await page.getByTestId('preview-canvas').hover();await page.keyboard.press('Control+Numpad1');
   await page.getByTestId('preview-canvas').click();
   check((await active()).id===layers.back&&(await active()).selected[0]===5,'Clicking another face with overlapping UVs selects its own linked layer');
@@ -132,6 +153,7 @@ try {
     e.selectMaterial(e.model.slots[1].id);e.setLayerIsland(2);
     const result={material:e.activeId,layer:e.layer.id};e.selectMaterial(original);return result;
   });
+  await showAll();
   await page.getByTestId('preview-canvas').hover();await page.keyboard.press('Numpad7');
   await page.getByTestId('preview-canvas').click();
   check(await page.evaluate(async expected=>{const {editor:e}=await import('/src/core/editor.ts');return e.activeId===expected.material&&e.layer.id===expected.layer&&e.doc.selectedIslands[0]===2;},material),
@@ -144,5 +166,29 @@ try {
   check(await page.getByLabel('UV set',{exact:true}).count() === 1, "UV map selector remains available beside the material");
   await mkdir('test-results',{recursive:true});
   await page.screenshot({path:'test-results/layer-islands.png'});
+  if (process.env.UVPAINT_TEST_MODEL) {
+    const encoded=(await readFile(process.env.UVPAINT_TEST_MODEL)).toString('base64');
+    const actual=await page.evaluate(async encoded=>{
+      const {editor:e}=await import('/src/core/editor.ts');
+      const {sourceGeometry}=await import('/src/render/mesh-source.ts');
+      const {TextureVisibility}=await import('/src/render/texture-visibility.ts');
+      const {islandMask}=await import('/src/tools/uv.ts');
+      await e.importModel(Uint8Array.from(atob(encoded),c=>c.charCodeAt(0)),'Visibility regression.glb');
+      e.addEmpty();e.setLayerIsland(e.doc.islands[Math.min(15,e.doc.islands.length-1)].id);e.selectLayer(e.layer.id);
+      const hidden=e.textureHiddenFaces,visible=e.visibleIslands,pixels=e.output.toDataURL(),history=e.history.undoStack.length;
+      const view=new TextureVisibility();view.update(e.doc,hidden,visible,e.textureIsolated);const rebuilds=view.rebuilds;
+      for(let i=0;i<100;i++)view.update(e.doc,e.textureHiddenFaces,e.visibleIslands,e.textureIsolated);
+      const rendered=view.render(e.output),mask=islandMask({...e.doc,islands:visible,selectedIslands:[]});
+      const alpha=rendered.getContext('2d').getImageData(0,0,e.doc.width,e.doc.height).data,allowed=mask.getContext('2d').getImageData(0,0,e.doc.width,e.doc.height).data;
+      let fringes=0;for(let i=3;i<alpha.length;i+=4)if(alpha[i]&&!allowed[i])fringes++;
+      return {single:visible.length===1,fringes,cached:view.rebuilds===rebuilds&&e.textureHiddenFaces===hidden&&e.visibleIslands===visible,
+        preserved:e.output.toDataURL()===pixels&&e.history.undoStack.length===history,expected:e.model.parts.map(p=>sourceGeometry(p).index?.count??sourceGeometry(p).getAttribute('position').count)};
+    },encoded);
+    await page.waitForTimeout(100);
+    check(actual.single&&actual.cached&&actual.preserved,'Real GLB: only bound island guides remain; visibility masks are cached and export pixels unchanged');
+    check(actual.fringes===0,'Real GLB: no texture fringes remain outside the isolated island');
+    check(await page.evaluate(async expected=>{const {editor:e}=await import('/src/core/editor.ts');return !e.hiddenFaces.size&&e.model.parts.every((p,i)=>p.geometry.index.count===expected[i]);},actual.expected),'Real GLB: automatic layer focus retains every triangle in 3D');
+    await page.screenshot({path:'test-results/real-model-layer-focus.png'});
+  }
   assert.deepEqual(errors,[]);
 } finally { await app.close();await server.close(); }

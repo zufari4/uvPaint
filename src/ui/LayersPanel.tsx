@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HTMLAttributes } from "react";
 import {
   Layers,
@@ -9,9 +9,9 @@ import {
   Trash2,
   ArrowUp,
   ArrowDown,
-  Merge,
+  ArrowDownToLine,
   ImagePlus,
-  Pipette,
+  SquareMousePointer,
 } from "lucide-react";
 import type { Layer, Blend } from "../types";
 import { useEditor } from "./hooks";
@@ -34,15 +34,10 @@ function Thumbnail({ layer, refresh }: { layer: Layer; refresh: number }) {
   return <canvas className="layer-thumb" ref={ref} width="44" height="36" />;
 }
 export function LayersPanel({ headingProps }: { headingProps?: HTMLAttributes<HTMLDivElement> }) {
+  const [renaming, setRenaming] = useState<string | null>(null);
   const e = useEditor(),
     d = e.doc,
     l = e.layer;
-  const islandOptions = useMemo(() => {
-    const visible = new Set(e.visibleIslands.map(i => i.id));
-    return d?.islands.map(island => <option key={island.id} value={`${d.uvSet}:${island.id}`}>
-      Island {String(island.id + 1).padStart(2, "0")}{visible.has(island.id) ? "" : " · Hidden"}
-    </option>);
-  }, [d?.islands, d?.uvSet, e.hiddenFaces]);
   return (
     <div className="layers-panel">
       <div {...headingProps} className="section-heading layers-drag-heading">
@@ -51,7 +46,7 @@ export function LayersPanel({ headingProps }: { headingProps?: HTMLAttributes<HT
         </span>
         <div className="mini-actions">
           <Button title="Merge down" disabled={!l || d?.layers[0] === l} onClick={() => e.mergeDown()}>
-            <Merge size={15} />
+            <ArrowDownToLine size={15} />
           </Button>
         </div>
       </div>
@@ -99,25 +94,6 @@ export function LayersPanel({ headingProps }: { headingProps?: HTMLAttributes<HT
           <span>%</span>
         </label>
       </div>
-      <div className="layer-island-binding">
-        <label htmlFor="layer-island">UV island</label>
-        <select id="layer-island" aria-label="Layer UV island"
-          disabled={!l || (!d?.islands.length && !l.uvBinding)}
-          value={l?.uvBinding ? `${l.uvBinding.uvSet}:${l.uvBinding.island.id}` : ""}
-          onChange={ev => e.setLayerIsland(ev.target.value ? Number(ev.target.value.split(":")[1]) : null)}>
-          <option value="">No linked island</option>
-          {l?.uvBinding && l.uvBinding.uvSet !== d?.uvSet && (
-            <option value={`${l.uvBinding.uvSet}:${l.uvBinding.island.id}`} disabled>
-              Island {String(l.uvBinding.island.id + 1).padStart(2, "0")} · {l.uvBinding.uvSet}
-            </option>
-          )}
-          {islandOptions}
-        </select>
-        <Button title={e.pickingLayerIsland ? "Cancel picking UV island (Escape)" : "Pick UV island from canvas or model"}
-          disabled={!l || !d?.islands.length} aria-pressed={e.pickingLayerIsland}
-          onClick={() => e.toggleIslandPicker()}><Pipette size={16} /></Button>
-        {e.pickingLayerIsland && <span role="status">Click an island in 2D or 3D · Esc to cancel</span>}
-      </div>
       <div className="layer-list">
         {d?.layers
           .slice()
@@ -127,6 +103,10 @@ export function LayersPanel({ headingProps }: { headingProps?: HTMLAttributes<HT
               key={layer.id}
               className={`layer-row ${d.activeId === layer.id ? "selected" : ""}`}
               onClick={() => e.selectLayer(layer.id)}
+              onDoubleClick={ev => {
+                if ((ev.target as HTMLElement).closest("button,input")) return;
+                e.selectLayer(layer.id); setRenaming(layer.id);
+              }}
             >
               <Button
                 title={layer.visible ? "Hide layer" : "Show layer"}
@@ -138,22 +118,33 @@ export function LayersPanel({ headingProps }: { headingProps?: HTMLAttributes<HT
                 {layer.visible ? <Eye size={14} /> : <EyeOff size={14} />}
               </Button>
               <Thumbnail layer={layer} refresh={e.transform ? 0 : e.pixelsRevision} />
-              <input
+              {renaming === layer.id ? <input
                 aria-label={`Layer name ${layer.name}`}
-                key={layer.name}
+                autoFocus
                 defaultValue={layer.name}
                 onClick={(ev) => ev.stopPropagation()}
-                onFocus={() => e.selectLayer(layer.id)}
+                onFocus={ev => ev.currentTarget.select()}
                 onBlur={(ev) => {
-                  if (ev.target.value !== layer.name)
+                  setRenaming(null);
+                  const name = ev.target.value.trim() || "Layer";
+                  if (name !== layer.name)
                     e.updateLayer(layer.id, {
-                      name: ev.target.value || "Layer",
+                      name,
                     });
                 }}
                 onKeyDown={(ev) => {
-                  if (ev.key === "Enter") ev.currentTarget.blur();
+                  if (ev.key === "Enter" || ev.key === "Escape") {
+                    ev.preventDefault(); ev.stopPropagation();
+                    if (ev.key === "Escape") ev.currentTarget.value = layer.name;
+                    ev.currentTarget.blur();
+                  }
                 }}
-              />
+              /> : <span className="layer-name" title="Double-click to rename" tabIndex={0}
+                onKeyDown={ev => {
+                  if (ev.key === "F2" || ev.key === "Enter") {
+                    ev.preventDefault();ev.stopPropagation();e.selectLayer(layer.id);setRenaming(layer.id);
+                  }
+                }}>{layer.name}</span>}
               <small>{Math.round(layer.opacity * 100)}%</small>
               {layer.uvBinding && <small className="layer-island-label" title={`Linked UV: ${layer.uvBinding.uvSet}`}>
                 Island {String(layer.uvBinding.island.id + 1).padStart(2, "0")}
@@ -165,8 +156,11 @@ export function LayersPanel({ headingProps }: { headingProps?: HTMLAttributes<HT
         )}
       </div>
       <div className="layer-footer">
-        <Button title="New empty layer" disabled={!d} onClick={() => e.addEmpty()}><Plus size={15} /></Button>
         <Button title="Import image layer" disabled={e.busy} onClick={() => void e.run(() => e.openImage())}><ImagePlus size={15} /></Button>
+        <Button title="New empty layer" disabled={!d} onClick={() => e.addEmpty()}><Plus size={15} /></Button>
+        <Button title={e.pickingLayerIsland ? "Cancel picking UV island (Escape)" : "Pick UV island from canvas or model"}
+          disabled={!l || !d?.islands.length} aria-pressed={e.pickingLayerIsland} active={e.pickingLayerIsland}
+          onClick={() => e.toggleIslandPicker()}><SquareMousePointer size={16} /></Button>
         <Button
           title="Duplicate layer"
           disabled={!l}

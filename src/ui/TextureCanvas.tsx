@@ -189,7 +189,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       for (let x = 0; x < w; x += tile)
         if ((Math.round(x / tile) + Math.round(y / tile)) % 2 === 0)
           ctx.fillRect(x, y, Math.min(tile, w - x), Math.min(tile, h - y));
-    visibility.current.update(doc, e.hiddenFaces, e.visibleIslands);
+    visibility.current.update(doc, e.textureHiddenFaces, e.visibleIslands, e.textureIsolated);
     const visibleTexture = visibility.current.render(e.output, e.layer?.visible ? e.transform?.outside : undefined, 0.4 * (e.layer?.opacity ?? 0));
     if (visibleTexture ?? e.output) ctx.drawImage((visibleTexture ?? e.output)!, 0, 0);
     if (!visibleTexture && e.transform?.outside && e.layer?.visible) {
@@ -282,6 +282,14 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       ctx.lineWidth = 1 / zoom;
       ctx.stroke();
       ctx.setLineDash([]);
+      const markers = e.tool === "polygon" ? path : e.tool === "lasso" ? [path[0]] : [];
+      ctx.fillStyle = "#243137";
+      markers.forEach((p,i) => {
+        ctx.beginPath();
+        if (i === 0) ctx.arc(p.x,p.y,5/zoom,0,Math.PI*2);
+        else ctx.rect(p.x-4/zoom,p.y-4/zoom,8/zoom,8/zoom);
+        ctx.fill();ctx.stroke();
+      });
     }
     const t = e.transform;
     if (t) {
@@ -397,7 +405,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
         ev.ctrlKey || ev.metaKey,
       );
       g.handle = g.transformHit.handle;
-      g.selectOnClick = e.tool === "move" && g.transformHit.action === "move";
+      g.selectOnClick = e.tool === "move" && g.transformHit.handle < 0;
       g.addIsland = ev.shiftKey;
       gesture.current = g;
       return;
@@ -444,6 +452,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       return;
     }
     if (e.tool === "polygon") {
+      if (polygon.current.length >= 3 && Math.hypot(p.x-polygon.current[0].x,p.y-polygon.current[0].y)*zoom <= 8) {finishPolygon();return;}
       polygon.current.push(p);
       setPath([...polygon.current]);
       return;
@@ -548,7 +557,15 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     gesture.current = null;
     if (!g) return;
     if (g.kind === "move-pending" || (g.kind === "transform" && g.selectOnClick)) {
-      if (doc) e.selectCanvasIsland(hitIsland({ ...doc, islands: e.visibleIslands }, g.start), g.addIsland);
+      if (doc) {
+        const id = hitIsland({ ...doc, islands: e.visibleIslands }, g.start);
+        const p = g.start;
+        const imageHit = !doc.islands.length && e.layer?.visible && p.x >= 0 && p.y >= 0 && p.x < doc.width && p.y < doc.height
+          && context(e.layer.canvas).getImageData(Math.floor(p.x), Math.floor(p.y), 1, 1).data[3] > 0;
+        e.selectCanvasIsland(id, g.addIsland);
+        if (id >= 0 || imageHit) e.beginTransform();
+        else if (e.doc?.selection) e.deselect();
+      }
       return;
     }
     if (g.kind === "selection-frame") {

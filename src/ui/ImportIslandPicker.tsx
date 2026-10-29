@@ -28,7 +28,7 @@ export function ImportIslandPicker({ targetMaterial, onPick }: { targetMaterial?
       const cloneMaterial = (material: THREE.Material) => material.clone();
       const mesh = new THREE.Mesh(sourceGeometry(source).clone(), Array.isArray(source.material) ? source.material.map(cloneMaterial) : cloneMaterial(source.material));
       mesh.uuid = source.uuid; mesh.matrix.copy(source.matrixWorld); mesh.matrixAutoUpdate = false;
-      mesh.visible = source.visible; scene.add(mesh); parts.push(mesh);
+      mesh.visible = true; scene.add(mesh); parts.push(mesh);
     }
     scene.add(new THREE.HemisphereLight(0xe9f3ff, 0x424952, 2));
     const light = new THREE.DirectionalLight(0xffffff, 3); light.position.set(4, 8, 6); scene.add(light);
@@ -79,7 +79,7 @@ export function ImportIslandPicker({ targetMaterial, onPick }: { targetMaterial?
       renderer.setSize(entry.contentRect.width, entry.contentRect.height); nav.resize(entry.contentRect.width, entry.contentRect.height);
     }); resize.observe(container);
     let frame = 0;
-    const draw = () => { frame = requestAnimationFrame(draw); overlay.sync(e.hiddenFaces, selected, true, hovered); nav.orbit.update(); renderer.render(scene, nav.camera); };
+    const draw = () => { frame = requestAnimationFrame(draw); overlay.sync(empty, selected, true, hovered); nav.orbit.update(); renderer.render(scene, nav.camera); };
     draw();
     return () => {
       cancelAnimationFrame(frame); resize.disconnect(); nav.dispose(); overlay.dispose();

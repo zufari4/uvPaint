@@ -35,7 +35,7 @@ try {
   await page.keyboard.press("Escape");await page.reload();await page.waitForSelector(".empty-canvas");
   ok((await read()).scale===1.75&&(await read()).mode==="outline","Custom font size and UV mode survive reload");
   await page.evaluate(async()=>{const {editor:e}=await import("/src/core/editor.ts");e.setTextScale(1.4);await e.sample();window.originalTextures=[...e.docs.values()].map(d=>d.layers[0].canvas.toDataURL());});
-  await page.getByLabel("Layer UV island",{exact:true}).waitFor();
+  await page.getByTitle("Pick UV island from canvas or model",{exact:true}).waitFor();
   const merge=page.locator('.layers-panel .section-heading').getByTitle("Merge down",{exact:true});
   ok(await merge.isDisabled(),"Merge down is visible in the header and disabled for the bottom layer");
   await page.getByTitle("New empty layer",{exact:true}).click();
@@ -51,7 +51,7 @@ try {
   await page.getByRole("menuitem",{name:"Hide other islands",exact:true}).click();
   await page.waitForFunction(async()=>{const {editor:e}=await import("/src/core/editor.ts");return e.model.parts[1].geometry.index.count===0;});
   ok((await read()).counts.join(",")==="12,0"&&(await read()).visible===2,"Isolation hides other faces across all materials and hides their UV lines");
-  ok(await page.getByLabel("Layer UV island",{exact:true}).locator("option").filter({hasText:"Hidden"}).count()===4,"Hidden islands remain accessible in the layer dropdown");
+  ok(await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');return e.doc.islands.length===6;}),"Hiding islands preserves their binding data");
   const hidden=(await read()).hidden;
   const materialIds=await page.getByLabel("Active material",{exact:true}).locator("option").evaluateAll(os=>os.map(o=>o.value));
   await page.getByLabel("Active material",{exact:true}).selectOption(materialIds[1]);

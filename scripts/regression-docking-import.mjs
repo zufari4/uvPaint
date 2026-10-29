@@ -14,6 +14,7 @@ try {
   await page.evaluate(async () => { window.e = (await import('/src/core/editor.ts')).editor; await e.sample(); });
   check(await page.locator('.texture-meta,.material-channel,.canvas-label').count() === 0 && await page.getByTitle('Material textures and transparency').count() === 0, 'Removed texture metadata, channel labels and Material settings stay absent');
   const panel = page.locator('.layers-sidebar'), heading = page.getByLabel('Layers panel docking');
+  check(await panel.getAttribute('data-dock')==='top-right','Layers default to the top-right corner');
   for (const corner of ['top-left', 'top-right', 'bottom-left', 'bottom-right']) {
     const b = await page.locator('.canvas-host').boundingBox(), h = await heading.boundingBox();
     await page.mouse.move(h.x + 70, h.y + h.height / 2); await page.mouse.down();
@@ -22,7 +23,7 @@ try {
     await page.mouse.up(); const r = await panel.boundingBox();
     check(await panel.getAttribute('data-dock') === corner && Math.abs((corner.endsWith('left') ? r.x-b.x : r.x+r.width-b.x-b.width)) < 1 && Math.abs((corner.startsWith('top') ? r.y-b.y : r.y+r.height-b.y-b.height)) < 1, `Layers dock flush to ${corner}`);
     const z = await page.locator('.canvas-host > .canvas-zoom').boundingBox();
-    check(z.x < b.x + 20 && (corner !== 'bottom-left' || z.y + z.height <= r.y), 'Zoom stays left and clear of the docked panel');
+    check(Math.abs(z.y+z.height-(b.y+b.height-8))<1 && (corner==='bottom-left' ? Math.abs(z.x+z.width-(b.x+b.width-8))<1 : z.x<b.x+20), 'Zoom moves to bottom-right for bottom-left layers, otherwise stays bottom-left');
   }
   check(await page.locator('.canvas-host > .canvas-zoom').evaluate(el => getComputedStyle(el).backgroundColor) === 'rgba(0, 0, 0, 0)', 'Zoom has no background');
   await heading.focus(); await page.keyboard.press('ArrowUp'); await page.reload(); await page.waitForSelector('.empty-canvas');
@@ -56,15 +57,18 @@ try {
   const png = await page.evaluate(async () => { const { canvas, context, toPNG } = await import('/src/core/canvas.ts'); const c=canvas(64,64);context(c).fillStyle='#ee0044';context(c).fillRect(0,0,64,64);return [...new Uint8Array(await (await toPNG(c)).arrayBuffer())]; });
   await mkdir('test-results',{recursive:true}); const file=path.resolve('test-results/picker-source.png'); await writeFile(file,new Uint8Array(png));
   await app.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},file);
-  const open = async () => { await page.getByTitle('Import image layer',{exact:true}).click(); await page.getByRole('dialog',{name:'Import image'}).waitFor(); await page.getByRole('button',{name:'Import selected area',exact:true}).click(); await page.getByTestId('import-island-preview').waitFor(); };
+  const open = async () => { await page.getByTitle('Import image layer',{exact:true}).click(); await page.getByRole('dialog',{name:'Import image'}).waitFor(); await page.getByRole('button',{name:'Next',exact:true}).click(); await page.getByTestId('import-island-preview').waitFor(); };
+  await page.evaluate(() => { e.selectIsland(4);e.setIslandVisibility('except');e.selectIsland(-1);e.model.parts[0].visible=false;window.hiddenBeforeImport=e.hiddenFaces; });
   await open(); check(await page.getByRole('button',{name:'Import linked image',exact:true}).isDisabled(), 'Image area confirmation opens a 3D island picker before importing');
   const pick = page.getByTestId('import-island-preview'); await pick.hover(); await page.keyboard.press('Numpad1'); await pick.click();
   await page.getByRole('button',{name:'Import linked image',exact:true}).waitFor({state:'visible'});
   check(await page.getByRole('button',{name:'Import linked image',exact:true}).isEnabled(), 'Clicking a model face chooses its exact UV island');
+  check(await page.evaluate(()=>e.hiddenFaces===window.hiddenBeforeImport&&!e.model.parts[0].visible),'Import picker can select hidden faces and objects without changing main visibility');
   check(await page.evaluate(() => e.doc.layers.length===1 && e.doc.selectedIslands.length===0 && e.model.scene.children.length>0), 'Picker changes neither the main model nor layers before confirmation');
   await page.screenshot({path:'test-results/import-island-picker.png'});
   await page.getByRole('button',{name:'Import linked image',exact:true}).click(); await page.getByRole('dialog',{name:'Import image'}).waitFor({state:'hidden'});
   check(await page.evaluate(() => e.doc.layers.length===2 && e.layer.uvBinding?.island.id===4 && e.transform?.source.width===64 && e.transform.clip===e.layer.uvMask), 'Imported image is linked to the picked island and starts a masked placement');
+  await page.evaluate(()=>{e.model.parts[0].visible=true;e.setIslandVisibility('all');});
   await page.keyboard.press('Enter'); await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
   check(await page.evaluate(() => e.doc.layers.length===1), 'Undo removes both image import and its UV binding');
   await open(); await page.keyboard.press('Escape'); await page.getByRole('dialog',{name:'Import image'}).waitFor({state:'hidden'});
@@ -72,6 +76,17 @@ try {
   await open(); await pick.hover(); await page.keyboard.press('Numpad7'); await pick.click();
   await page.getByRole('button',{name:'Import linked image',exact:true}).click(); await page.getByRole('dialog',{name:'Import image'}).waitFor({state:'hidden'});
   check(await page.evaluate(() => e.activeId===e.model.slots[1].id && e.layer.uvBinding?.island.id===2), 'Picking another material creates the bound image layer in that material');
+  await page.keyboard.press('Enter');
+  const countBeforeAdd=await page.evaluate(()=>e.doc.layers.length);
+  await page.getByTitle('Import image layer',{exact:true}).click();
+  await page.getByRole('dialog',{name:'Import image'}).waitFor();
+  const area=await page.getByTestId('import-preview').boundingBox(),scale=Math.min((area.width-40)/64,(area.height-40)/64);
+  const x=area.x+(area.width-64*scale)/2,y=area.y+(area.height-64*scale)/2;
+  await page.mouse.move(x+16*scale,y+16*scale);await page.mouse.down();await page.mouse.move(x+48*scale,y+48*scale,{steps:5});await page.mouse.up();
+  await page.getByRole('button',{name:'Add',exact:true}).click();
+  await page.getByRole('dialog',{name:'Import image'}).waitFor({state:'hidden'});
+  check(await page.evaluate(count=>e.doc.layers.length===count+1&&!e.layer.uvBinding&&e.transform?.source.width===32&&e.transform?.source.height===32,countBeforeAdd),'Add imports the chosen crop directly into a new unbound layer without an island-picking step');
+  check(await page.getByTestId('import-island-preview').count()===0,'Direct Add closes the dialog without opening the 3D picker');
   await page.keyboard.press('Enter');
   await page.screenshot({path:'test-results/docked-workspace.png'});
   assert.deepEqual(errors,[]);

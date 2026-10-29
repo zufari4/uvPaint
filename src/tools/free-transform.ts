@@ -22,7 +22,7 @@ export function hitTransform(
     (q) => Math.hypot(q.x - p.x, q.y - p.y) <= 9 / zoom,
   );
   if (handle >= 0)
-    return { action: free && !ctrl ? "scale" : "distort", handle };
+    return { action: free && (!ctrl || handle >= 4) ? "scale" : "distort", handle };
   if (free) {
     const crosses = points.map((a, i) => {
       const b = points[(i + 1) % points.length];
@@ -102,6 +102,23 @@ export function dragTransform(
     const a = { x: start.x - anchor.x, y: start.y - anchor.y },
       b = { x: p.x - anchor.x, y: p.y - anchor.y };
     sx = sy = (a.x * b.x + a.y * b.y) / (a.x * a.x + a.y * a.y);
+  }
+  if (ctrl) {
+    const width = Math.hypot(u.x, u.y), height = Math.hypot(v.x, v.y);
+    const snapSize = (factor: number, size: number) => {
+      if (size < 1e-8) return factor;
+      const dimension = factor * size;
+      const snapped = Math.round(dimension / 10) * 10;
+      return (snapped || (dimension < 0 ? -10 : 10)) / size;
+    };
+    if (h < 4 && !shift) {
+      // Quantize the longer dimension and derive the other from the original
+      // aspect ratio. This also works along a rotated frame's local axes.
+      sx = sy = snapSize(sx, Math.max(width, height));
+    } else {
+      if (h !== 4 && h !== 6) sx = snapSize(sx, width);
+      if (h !== 5 && h !== 7) sy = snapSize(sy, height);
+    }
   }
   const safe = (n: number) =>
     Math.abs(n) < 0.001 ? (n < 0 ? -0.001 : 0.001) : n;

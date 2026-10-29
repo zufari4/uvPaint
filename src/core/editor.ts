@@ -48,6 +48,8 @@ export class Editor {
   contiguous = true;
   uvDisplay: UVDisplayMode = "outline";
   hiddenFaces = new Set<string>();
+  private textureFocusEnabled = true;
+  private textureHiddenCache: { hidden: Set<string>; faces: Island["faces"]; model: ModelAsset | null; result: Set<string> } | null = null;
   islandMenu: {x:number; y:number} | null = null;
   pickingLayerIsland = false;
   imageImport: { id: string; image: HTMLCanvasElement; name: string } | null = null;
@@ -83,17 +85,29 @@ export class Editor {
     this.uvDisplay = preferences.uvDisplay;
   }
   setUVDisplay(mode: UVDisplayMode) { this.uvDisplay = mode; this.savePreferences(); }
+  get textureIsolated() { return this.textureFocusEnabled && !!this.layer?.uvBinding?.island.faces?.length; }
+  get textureHiddenFaces(): Set<string> {
+    const faces = this.textureFocusEnabled ? this.layer?.uvBinding?.island.faces : undefined;
+    if (!faces?.length) return this.hiddenFaces;
+    const cached = this.textureHiddenCache;
+    if (cached?.hidden === this.hiddenFaces && cached.faces === faces && cached.model === this.model) return cached.result;
+    const result = this.facesOutside(new Set(faces.map(faceKey)));
+    this.hiddenFaces.forEach(key => result.add(key));
+    this.textureHiddenCache = { hidden: this.hiddenFaces, faces, model: this.model, result };
+    return result;
+  }
   get visibleIslands(): Island[] {
     const islands = this.doc?.islands;
     if (!islands) return [];
-    if (this.visibleCache?.islands === islands && this.visibleCache.hidden === this.hiddenFaces) return this.visibleCache.result;
+    const hidden = this.textureHiddenFaces;
+    if (this.visibleCache?.islands === islands && this.visibleCache.hidden === hidden) return this.visibleCache.result;
     const result = islands.map(island => {
       if (!island.faces) return island;
-      const indices = island.faces.map((f,i)=>this.hiddenFaces.has(faceKey(f)) ? -1 : i).filter(i=>i>=0);
+      const indices = island.faces.map((f,i)=>hidden.has(faceKey(f)) ? -1 : i).filter(i=>i>=0);
       if (indices.length === island.triangles.length) return island;
       return {...island, triangles: indices.map(i=>island.triangles[i]), faces: indices.map(i=>island.faces![i])};
     }).filter(i=>i.triangles.length);
-    this.visibleCache={islands,hidden:this.hiddenFaces,result};
+    this.visibleCache={islands,hidden,result};
     return result;
   }
   get selectedFaces() {
@@ -111,11 +125,17 @@ export class Editor {
     if (action !== "all" && !selected.size) return;
     const hidden = new Set<string>();
     if (action === "except") selected.forEach(key=>hidden.add(key));
-    if (action === "isolate") for (const part of this.model?.parts ?? []) {
+    if (action === "isolate") this.facesOutside(selected).forEach(key => hidden.add(key));
+    this.textureFocusEnabled=false;
+    this.hiddenFaces=hidden; this.islandMenu=null; this.emit();
+  }
+  private facesOutside(selected: Set<string>) {
+    const hidden = new Set<string>();
+    for (const part of this.model?.parts ?? []) {
       const g=sourceGeometry(part), count=(g.index?.count ?? g.getAttribute("position").count)/3;
       for(let i=0;i<count;i++) {const key=faceKey({meshId:part.uuid,triangle:i});if(!selected.has(key))hidden.add(key);}
     }
-    this.hiddenFaces=hidden; this.islandMenu=null; this.emit();
+    return hidden;
   }
   setUVAppearance(patch: { uvColor?: string; uvOpacity?: number }) {
     if (patch.uvColor !== undefined && /^#[0-9a-f]{6}$/i.test(patch.uvColor))
@@ -286,6 +306,7 @@ export class Editor {
     }
     this.activeId = state.documents[state.activeDocument].id;
     this.hiddenFaces = state.hiddenFaces;this.previewMode = state.previewMode;this.previewEdges = state.previewEdges;
+    this.textureFocusEnabled = true;
     this.tool = state.paint.tool;this.color = state.paint.color;this.backgroundColor = state.paint.backgroundColor;
     this.brushSize = state.paint.brushSize;this.brushOpacity = state.paint.brushOpacity;this.tolerance = state.paint.tolerance;this.contiguous = state.paint.contiguous;
     this.islandMenu = null;this.pickingLayerIsland = false;this.cloneSource = null;this.output = null;
@@ -306,6 +327,7 @@ export class Editor {
     if (this.model) disposeModel(this.model);
     this.model = model;
     this.hiddenFaces = new Set();
+    this.textureFocusEnabled = true;
     this.islandMenu = null;
     this.pickingLayerIsland = false;
     this.docs.clear();
@@ -359,6 +381,7 @@ export class Editor {
     }
   }
   selectMaterial(id: string) {
+    this.textureFocusEnabled = true;
     this.pickingLayerIsland = false;
     this.confirmTransform();
     this.activeId = id;
@@ -367,6 +390,7 @@ export class Editor {
     this.emit(true);
   }
   selectTexture(sourceIndex: number) {
+    this.textureFocusEnabled = true;
     this.pickingLayerIsland = false;
     const slot = this.model?.slots.find((s) => s.id === this.activeId);
     if (!slot || !this.doc) return;
@@ -461,6 +485,7 @@ export class Editor {
     await this.importPreparedImage(image, name);
   }
   private async importPreparedImage(image: HTMLCanvasElement, name: string, targetLayerId: string | null = null, binding?: { materialId: string; islandId: number } | null) {
+    this.textureFocusEnabled = true;
     const bindingDoc = binding ? this.docs.get(binding.materialId) : undefined;
     const boundIsland = bindingDoc?.islands.find(i => i.id === binding?.islandId);
     if (binding && (!boundIsland || (targetLayerId && binding.materialId !== this.activeId))) throw new Error("Choose an island belonging to the target material.");
@@ -534,12 +559,16 @@ export class Editor {
     });
   }
   selectLayer(id: string) {
+    if (!this.doc?.layers.some(layer => layer.id === id)) return;
     this.pickingLayerIsland = false;
     this.confirmTransform();
     if (this.doc) {
       this.doc.activeId = id;
       const binding = this.layer?.uvBinding;
       this.doc.selectedIslands = binding?.uvSet === this.doc.uvSet ? [binding.island.id] : [];
+      // Layer focus affects only the texture view. Manual 3D hiding stays intact.
+      this.textureFocusEnabled = true;
+      this.islandMenu = null;
     }
     this.emit();
   }
@@ -547,6 +576,7 @@ export class Editor {
     if (!this.doc || !this.layer) return;
     const island = this.doc.islands.find(i => i.id === id);
     if (id !== null && !island) return;
+    this.textureFocusEnabled = true;
     this.pickingLayerIsland = false;
     this.change("Link layer to UV island", d => {
       const layer = d.layers.find(l => l.id === d.activeId)!;
@@ -863,6 +893,12 @@ export class Editor {
   }
   setTool(tool: Tool) {
     this.pickingLayerIsland = false;
+    if (tool === "move") {
+      this.tool = tool;
+      this.beginTransform(this.transform?.kind ?? "free");
+      this.emit();
+      return;
+    }
     this.confirmTransform();
     this.tool = tool;
     this.emit();

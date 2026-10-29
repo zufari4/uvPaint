@@ -158,6 +158,32 @@ try {
   assert.ok(result.checks.length >= 18);
   result.checks.forEach(label => console.log("PASS", label));
   console.log(`2048px move: ${result.meanMs.toFixed(2)} ms average CPU update`);
+  await page.evaluate(async()=>{
+    const {editor:e}=await import('/src/core/editor.ts');
+    const {canvas,context,toPNG}=await import('/src/core/canvas.ts');
+    e.cancelTransform();await e.newCanvas(128,128);
+    const image=canvas(48,32);context(image).fillStyle='#e95b40';context(image).fillRect(0,0,48,32);
+    await e.importImage(new Uint8Array(await (await toPNG(image)).arrayBuffer()),'frame.png');e.confirmTransform();e.setTool('brush');
+  });
+  const transformButton=page.getByTitle('Move / transform (V)',{exact:true});
+  await transformButton.click();
+  assert.ok(await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');window.testTransform=e.transform;window.testHistory=e.history.undoStack.length;return e.tool==='move'&&e.transform?.points.length===4&&e.transform.source.width===48&&e.transform.source.height===32;}));
+  assert.ok(await page.getByTitle('Apply transform (Enter)',{exact:true}).isVisible());
+  console.log('PASS Clicking Transform immediately opens the frame around layer content');
+  await transformButton.click();
+  assert.ok(await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');return e.transform===window.testTransform&&e.history.undoStack.length===window.testHistory;}));
+  console.log('PASS Clicking the active Transform button preserves its frame and undo history');
+  await page.getByTestId('texture-canvas').focus();await page.keyboard.press('Escape');await page.keyboard.press('KeyV');
+  assert.ok(await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');return !!e.transform;}));
+  console.log('PASS V also opens the transform frame after cancellation');
+  await page.getByTestId('texture-canvas').click({position:{x:6,y:6}});
+  assert.ok(await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');return !e.transform&&!e.doc.selectedIslands.length&&!e.doc.selection;}));
+  console.log('PASS A blank click outside the frame clears selection instead of starting rotation');
+  await page.keyboard.press('Escape');await transformButton.click();
+  assert.ok(await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');return !!e.transform;}));
+  await page.getByTitle('Brush (B)',{exact:true}).click();
+  assert.ok(await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');return e.tool==='brush'&&!e.transform;}));
+  console.log('PASS Re-entering Transform works and another tool closes the frame');
 } finally {
   await app.close();
   await server.close();

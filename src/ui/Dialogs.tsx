@@ -105,6 +105,7 @@ export function HelpDialog({ close }: { close: () => void }) {
             Shift unlocks proportions / snaps rotation · Alt from center
             <br />
             Ctrl snaps rotation to 5° and movement to 10 texture pixels
+            <br />Press Ctrl after starting a scale drag to snap size to 10 pixels
             <br />
             Ctrl-drag a corner distorts · Warp has 16 control points
             <br />

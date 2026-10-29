@@ -1265,6 +1265,11 @@ select {
 }
 .layer-name {
   min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
 }
 .uv-panel {
   min-width: 280px;
@@ -1398,19 +1403,7 @@ select {
 .view-cube-actions {display:flex;gap:3px;justify-content:center;}
 .view-cube-actions button {font-size:12px;padding:3px;min-width:45px;background:#242a30cc;}
 
-.layer-island-binding {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 6px 11px;
-  border-bottom: 1px solid #31363d;
-  font-size: calc(10px * var(--ui-text-scale, 1.4));
-  color: #a4b1bc;
-}
-.layer-island-binding select { min-width: 170px; max-width: 280px; flex: 1; }
-.layer-island-binding button[aria-pressed=true] { background: #334f49; color: #b4ffe9; }
-.layer-island-binding [role=status] { color: #a5ece0; }
+.layer-footer button[aria-pressed=true] { background: #334f49; color: #b4ffe9; }
 .layer-island-label { color: #a5ece0; white-space: nowrap; margin-left: 8px; }
 .preview-stage.picking-island canvas { cursor: crosshair; }
 
@@ -1424,7 +1417,7 @@ select {
 .layers-drag-heading { cursor:grab; touch-action:none; user-select:none; }
 .layers-sidebar.docking .layers-drag-heading { cursor:grabbing; }
 .layers-dock-preview { background:#8adfca22; border:2px dashed #9ce8d6; pointer-events:none; z-index:6; }
-.canvas-host:has(.layers-sidebar[data-dock=bottom-left]) .canvas-zoom { bottom:min(308px, calc(100% - 32px)); }
+.canvas-host:has(.layers-sidebar[data-dock=bottom-left]) > .canvas-zoom { left:auto; right:8px; bottom:8px; }
 .workspace-content { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; }
 .workspace-views { display:flex; flex:1; min-width:0; min-height:0; }
 .workspace-views[data-expanded=texture] > .preview-pane,
@@ -1434,7 +1427,6 @@ select {
 .texture-view-toolbar { padding-right:8px; }
 .layers-sidebar .section-heading { flex-shrink: 0; }
 .layers-sidebar .layer-properties select { max-width: 130px; }
-.layers-sidebar .layer-island-binding select { min-width: 130px; }
 .layers-sidebar .layer-row { flex-wrap: wrap; column-gap: 3px; }
 .layers-sidebar .layer-row input { min-width: 60px; }
 .layers-sidebar .layer-island-label { margin-left: auto; margin-right: 8px; }
