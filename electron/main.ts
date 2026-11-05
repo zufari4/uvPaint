@@ -1,11 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, session, Menu } from "electron";
 import { readFile, writeFile, rename, unlink } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, isAbsolute, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { freemem } from "node:os";
+import { RecentProjects } from "./recent-projects";
 let win: BrowserWindow;
 const projectFiles = new Map<string, string>();
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  const recentProjects = new RecentProjects(join(app.getPath("userData"), "recent-projects.json"));
+  await recentProjects.load();
   // The default Electron Edit menu routes Ctrl+Z to Chromium's text history.
   // The application has its own menu and document-level keyboard shortcuts.
   Menu.setApplicationMenu(null);
@@ -56,14 +59,43 @@ app.whenReady().then(() => {
     });
     if (result.canceled) return null;
     const file = result.filePaths[0];
+    if (kind === "model") win.webContents.send("model:reading", basename(file));
     const bytes = new Uint8Array(await readFile(file));
     const handle = kind === "project" ? randomUUID() : undefined;
     if (handle) projectFiles.set(handle, file);
     return {
       name: basename(file),
       bytes,
+      ...(kind === "model" ? { sourcePath: file } : {}),
       ...(handle ? { handle } : {}),
     };
+  });
+  ipcMain.handle("model:reload", async (event, file) => {
+    validate(event);
+    if (typeof file !== "string" || !isAbsolute(file) || extname(file).toLowerCase() !== ".glb")
+      throw new Error("Invalid source GLB path.");
+    try { return { name: basename(file), bytes: new Uint8Array(await readFile(file)), sourcePath: file }; }
+    catch { throw new Error(`Cannot reload GLB: ${file}. The original file is missing or unavailable.`); }
+  });
+  ipcMain.handle("project:recent-list", event => {
+    validate(event);
+    return recentProjects.list();
+  });
+  ipcMain.handle("project:remember", async (event, handle) => {
+    validate(event);
+    const file = typeof handle === "string" ? projectFiles.get(handle) : undefined;
+    if (!file) throw new Error("Unknown project file.");
+    await recentProjects.remember(file);
+  });
+  ipcMain.handle("project:open-recent", async (event, id) => {
+    validate(event);
+    const file = recentProjects.path(id);
+    let bytes: Uint8Array;
+    try { bytes = new Uint8Array(await readFile(file)); }
+    catch { throw new Error(`Cannot open project: ${file}. It may have been moved, deleted, or become unavailable. Use Open project to locate it.`); }
+    const handle = randomUUID();
+    projectFiles.set(handle, file);
+    return { name: basename(file), bytes, handle };
   });
   ipcMain.handle("file:save-png", async (event, bytes, name) => {
     validate(event);
@@ -115,6 +147,7 @@ app.whenReady().then(() => {
     }
     const handle = existingHandle ?? randomUUID();
     projectFiles.set(handle, target);
+    await recentProjects.remember(target);
     return { name: basename(target), handle };
   });
   ipcMain.handle("system:memory", (event) => {

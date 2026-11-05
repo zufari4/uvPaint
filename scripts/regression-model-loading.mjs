@@ -1,0 +1,51 @@
+import { _electron as electron } from 'playwright';
+import { createServer } from 'vite';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const server=await createServer();await server.listen();
+const env={...process.env,UVPAINT_DEV_URL:'http://127.0.0.1:5173'};delete env.ELECTRON_RUN_AS_NODE;
+const app=await electron.launch({args:['.',`--user-data-dir=${process.cwd()}/test-results/loading-profile`],env});
+const check=(v,label)=>{assert.ok(v,label);console.log('PASS',label);};
+try {
+  const page=await app.firstWindow(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.waitForSelector('.empty-canvas');
+  const bytes=await page.evaluate(async()=>{
+    const THREE=await import('/node_modules/three/build/three.module.js');const {GLTFExporter}=await import('/node_modules/three/examples/jsm/exporters/GLTFExporter.js');
+    const scene=new THREE.Scene();scene.add(new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial()));
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshStandardMaterial({color:'#0088ff'}));mesh.position.x=2;scene.add(mesh);
+    return [...new Uint8Array(await new GLTFExporter().parseAsync(scene,{binary:true}))];
+  });
+  await mkdir('test-results',{recursive:true});const file=path.resolve('test-results/loading.glb');await writeFile(file,new Uint8Array(bytes));
+  await app.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},file);
+  await page.evaluate(async()=>{
+    window.e=(await import('/src/core/editor.ts')).editor;await e.newCanvas(64,64);window.oldDoc=e.doc;window.stages=[];
+    e.subscribe(()=>{if(e.modelLoading)window.stages.push({...e.modelLoading});});
+    const original=e.checkSize.bind(e);let first=true;
+    e.checkSize=async(w,h)=>{if(first){first=false;await new Promise(resolve=>window.releaseLoad=resolve);}await original(w,h);};
+    window.loadTask=e.run(()=>e.openModel());
+  });
+  await page.waitForFunction(()=>!!window.releaseLoad);
+  const indicator=page.getByRole('status',{name:'Loading GLB model',exact:true});await indicator.waitFor();
+  check((await indicator.textContent()).includes('loading.glb')&&(await indicator.textContent()).includes('Preparing materials'),'Loading indicator displays file name and current phase');
+  check(await page.locator('.workspace').getAttribute('inert')!==null&&await page.getByTitle('Application menu',{exact:true}).isDisabled(),'Workspace editing is blocked while the model is loading');
+  await page.keyboard.press('b');check(await page.evaluate(()=>e.tool==='move'&&e.doc===window.oldDoc),'Shortcuts do not edit the previous document during loading');
+  await page.screenshot({path:'test-results/model-loading.png'});
+  await page.evaluate(()=>window.releaseLoad());await page.evaluate(()=>window.loadTask);
+  check(await indicator.count()===0&&await page.evaluate(()=>!e.busy&&e.model.name==='loading.glb'),'Indicator closes after model installation and preview preparation');
+  const stages=await page.evaluate(()=>window.stages.map(s=>s.stage));
+  check(['Reading file','Reading geometry and textures','Preparing materials','Building UV islands','Preparing 3D preview'].every(s=>stages.includes(s)),'Native GLB loading reports every actual processing phase');
+  check(await page.evaluate(()=>window.stages.some(s=>s.detail?.includes('/ 2'))),'Model preparation reports real object/material counts');
+  await app.evaluate(({dialog})=>{dialog.showOpenDialog=async()=>({canceled:true,filePaths:[]});});
+  await page.evaluate(async()=>{window.savedModel=e.model;await e.run(()=>e.openModel());});
+  check(await indicator.count()===0&&await page.evaluate(()=>e.model===window.savedModel&&!e.busy),'Canceling the file dialog leaves no loading indicator and preserves the model');
+  const broken=path.resolve('test-results/broken.glb');await writeFile(broken,'invalid GLB');
+  await app.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},broken);
+  await page.evaluate(()=>e.run(()=>e.openModel()));await page.getByRole('alert').waitFor();
+  check(await indicator.count()===0&&await page.evaluate(()=>e.model===window.savedModel&&!e.busy),'Invalid GLB clears the loading state and preserves the existing model');await page.getByTitle('Dismiss error',{exact:true}).click();
+  await app.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},path.resolve('test-results/missing.glb'));
+  await page.evaluate(()=>e.run(()=>e.openModel()));await page.getByRole('alert').waitFor();
+  check(await indicator.count()===0&&await page.evaluate(()=>!e.busy),'File-read errors also clear the loading state');await page.getByTitle('Dismiss error',{exact:true}).click();
+  await page.evaluate(async bytes=>{window.stages=[];await e.run(()=>e.importModelFile(new File([new Uint8Array(bytes)],'dropped.glb')));},bytes);
+  check(await page.evaluate(()=>e.model.name==='dropped.glb'&&!e.modelLoading&&window.stages[0].stage==='Reading file'),'Drag-and-drop file loading uses the same progress display');
+  assert.deepEqual(errors,[]);
+} finally {await app.close();await server.close();}

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
+import { defaultStudioLighting, studioLightControls } from "../core/studio-lighting";
 export function SettingsDialog({
   close,
   openCanvas,
@@ -65,6 +66,17 @@ export function SettingsDialog({
           />
           <output>{Math.round(e.textScale * 100)}%</output>
         </label>
+        <h3>Studio lighting</h3>
+        {studioLightControls.map(control => <label className="setting-row" key={control.key}>
+          <span>{control.label}</span>
+          <input type="range" aria-label={`Studio ${control.label.toLowerCase()}`}
+            min={control.min} max={control.max} step="0.05"
+            value={e.studioLighting[control.key]}
+            onChange={event => e.setStudioLighting({ [control.key]: +event.target.value })} />
+          <output>{Math.round(e.studioLighting[control.key] * 100)}%</output>
+        </label>)}
+        <Button title="Reset studio lighting" onClick={() => e.setStudioLighting(defaultStudioLighting)}>Reset lighting</Button>
+        <p><small>Applies to the 3D preview. Texture colors and PNG export stay unchanged.</small></p>
         <h3>UV guides</h3>
         <label className="setting-row">
           <span>Display</span>

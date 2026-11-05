@@ -84,6 +84,15 @@ export class ViewportNavigation {
     this.orbit.update();
   }
   toggleProjection() { this.switchProjection(this.camera !== this.orthographic); }
+  snapshot() {
+    return { perspective: this.perspective.clone(), orthographic: this.orthographic.clone(),
+      isOrthographic: this.camera === this.orthographic, target: this.orbit.target.clone() };
+  }
+  restore(state: ReturnType<ViewportNavigation["snapshot"]>) {
+    this.perspective.copy(state.perspective);this.orthographic.copy(state.orthographic);
+    this.camera = state.isOrthographic ? this.orthographic : this.perspective;
+    this.orbit.object = this.camera;this.orbit.target.copy(state.target);this.orbit.update();
+  }
   setView(view: ViewName) {
     this.switchProjection(view !== "isometric");
     const distance=this.camera.position.distanceTo(this.orbit.target);

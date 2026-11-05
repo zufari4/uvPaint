@@ -5,6 +5,7 @@ import { invertSelection } from "../tools/selection";
 export function useShortcuts() {
   useEffect(() => {
     const handler = (ev: KeyboardEvent) => {
+      if (e.modelLoading) return;
       const target = ev.target as HTMLElement;
       if (!ev.defaultPrevented && !document.querySelector(".modal-backdrop") && (ev.ctrlKey || ev.metaKey) && ev.code === "KeyS" && !ev.shiftKey) {
         ev.preventDefault();target.blur();void e.run(() => e.saveProject(ev.altKey));return;

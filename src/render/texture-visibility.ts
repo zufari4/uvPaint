@@ -17,25 +17,16 @@ export class TextureVisibility {
     if (this.islands === doc.islands && this.hidden === hidden && this.width === doc.width && this.height === doc.height && this.isolated === isolated) return;
     this.isolated = isolated;
     this.islands = doc.islands; this.hidden = hidden; this.width = doc.width; this.height = doc.height;
-    const removed = doc.islands.map(island => ({ ...island,
-      triangles: island.triangles.filter((_, i) => island.faces?.[i] && hidden.has(faceKey(island.faces[i]))),
-    })).filter(island => island.triangles.length);
+    const hasHiddenFaces = doc.islands.some(island => island.faces?.some(face => hidden.has(faceKey(face))));
     this.mask = null;
-    if (!removed.length && !isolated) { this.buffer = null; return; }
+    if (!hasHiddenFaces && !isolated) { this.buffer = null; return; }
     this.mask = canvas(doc.width, doc.height, false);
     const ctx = context(this.mask);
     ctx.fillStyle = "#fff";
-    if (isolated) {
-      // Keep only the focused faces. Subtracting other triangles leaves their
-      // antialiased texture fringes outside the triangle boundaries.
-      traceIslands(ctx, visible, doc.width, doc.height);ctx.fill();
-    } else {
-      traceIslands(ctx, removed, doc.width, doc.height); ctx.fill();
-      ctx.strokeStyle = "#fff";ctx.lineWidth = 2;ctx.lineJoin = "round";ctx.stroke();
-      // Overlapping UV pixels still belong to visible faces. Keep their image.
-      ctx.globalCompositeOperation = "destination-out";
-      traceIslands(ctx, visible, doc.width, doc.height); ctx.fill();
-    }
+    // Both manual hiding and layer focus keep only visible UV faces. A mask
+    // of removed faces leaks texture padding and transformed pixels into UV
+    // gaps. The visible union also preserves shared pixels of overlapping UVs.
+    traceIslands(ctx, visible, doc.width, doc.height);ctx.fill();
     if (!this.buffer || this.buffer.width !== doc.width || this.buffer.height !== doc.height)
       this.buffer = canvas(doc.width, doc.height, false);
     this.rebuilds++;
@@ -47,7 +38,7 @@ export class TextureVisibility {
     ctx.clearRect(0, 0, this.width, this.height);
     if (source) ctx.drawImage(source, 0, 0);
     if (outside && opacity) { ctx.globalAlpha = opacity; ctx.drawImage(outside, 0, 0); }
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = this.isolated ? "destination-in" : "destination-out";
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "destination-in";
     ctx.drawImage(this.mask, 0, 0); ctx.globalCompositeOperation = "source-over";
     return this.buffer;
   }

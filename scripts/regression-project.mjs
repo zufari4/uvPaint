@@ -38,7 +38,7 @@ try {
     e.selectIsland(1);e.setIslandVisibility('isolate');e.model.parts[2].visible=false;
     e.selectUVSet('uv');e.addEmpty();e.setLayerIsland(0);e.color='#00ff00';e.fill({x:12,y:12});
     e.selectMaterial(e.model.slots[1].id);await e.newCanvas(64,64);e.addEmpty();e.color='#2255dd';e.fill({x:20,y:20});
-    e.selectMaterial(baseId);e.tool='eraser';e.brushSize=47;e.brushOpacity=.7;e.previewEdges=true;e.previewMode='unlit';
+    e.selectMaterial(baseId);e.tool='eraser';e.brushSize=47;e.brushOpacity=.7;e.previewEdges=true;
     const fingerprint=editor=>{
       const key=d=>`${d.id}:${d.sourceIndex??-1}`;
       const stored=new Map([...editor.textureDocuments.values()].map(d=>[key(d),d]));
@@ -65,6 +65,8 @@ try {
     check(e.transform.source.width===128,'Saved placement retains its full off-canvas image source');e.cancelTransform();
     const json=bytes=>JSON.parse(new TextDecoder().decode(bytes.subarray(16,16+new DataView(bytes.buffer).getUint32(8,true))));
     const rewrite=(data,change)=>{const oldLength=new DataView(data.buffer).getUint32(8,true),m=json(data);change(m);const next=new TextEncoder().encode(JSON.stringify(m)),out=new Uint8Array(16+next.length+data.length-16-oldLength);out.set(data.subarray(0,16));new DataView(out.buffer).setUint32(8,next.length,true);out.set(next,16);out.set(data.subarray(16+oldLength),16+next.length);return out;};
+    const legacy=new Editor();await legacy.importProject(rewrite(bytes,m=>m.previewMode='unlit'),'legacy-unlit.uvpaint');
+    check(legacy.previewMode==='studio'&&json(await legacy.projectBytes()).previewMode==='studio','Legacy Unlit projects open and resave in Studio without losing compatibility');
     for(const bad of [bytes.subarray(0,bytes.length-9),rewrite(bytes,m=>m.version=99),rewrite(bytes,m=>m.documents[0].layers[0].canvas=999999),rewrite(bytes,m=>m.documents[0].layers[1].uvBinding.island.faces[0].triangle=999999)]){
       const current=e.model,currentDoc=e.doc;let rejected=false;try{await e.importProject(bad,'broken.uvpaint');}catch{rejected=true;}
       check(rejected&&e.model===current&&e.doc===currentDoc,'Invalid or truncated project is rejected without changing the current workspace');

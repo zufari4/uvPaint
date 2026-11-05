@@ -28,7 +28,7 @@ export type ProjectState = {
 };
 type Manifest = {
   format: "UV Paint project"; version: 1; assets: Asset[];
-  model: { kind: "glb" | "sample"; name: string; asset: number | null; meshes: string[]; materials: string[]; visible: boolean[] } | null;
+  model: { kind: "glb" | "sample"; name: string; asset: number | null; meshes: string[]; materials: string[]; visible: boolean[]; sourcePath?: string } | null;
   documents: SavedDocument[]; openDocuments: number[]; activeDocument: number;
   hiddenFaces: string[]; previewMode: "studio" | "unlit"; previewEdges: boolean; paint: ProjectPaint;
 };
@@ -52,7 +52,7 @@ export async function encodeProject(state: ProjectState): Promise<Uint8Array> {
     if (!source) throw new Error("This model has no saved source. Import its GLB before saving a project.");
     model = { kind: source.kind, name: state.model.name, asset: null,
       meshes: state.model.parts.map(p => p.uuid), materials: state.model.slots.map(s => s.id), visible: state.model.parts.map(p => p.visible) };
-    if (source.kind === "glb") { model.asset = assets.length; assets.push({ kind: "glb" });chunks.push(source.bytes); }
+    if (source.kind === "glb") { model.sourcePath = source.path;model.asset = assets.length; assets.push({ kind: "glb" });chunks.push(source.bytes); }
   }
   const documents: SavedDocument[] = [];
   for (const doc of savedDocuments) {
@@ -148,6 +148,8 @@ export async function decodeProject(bytes: Uint8Array, checkSize: (w: number, h:
       if (saved.kind === "glb") {
         requireValue(int(saved.asset) && saved.asset < count && manifest.assets[saved.asset].kind === "glb", "missing embedded model.");
         model = (await loadGLB(new Uint8Array(chunks[saved.asset]).buffer, saved.name, checkSize)).model;
+        requireValue(saved.sourcePath === undefined || text(saved.sourcePath), "invalid source GLB path.");
+        if (model.source?.kind === "glb") model.source.path = saved.sourcePath;
       } else model = (await demoModel(checkSize)).model;
       requireValue(model.parts.length === saved.meshes.length && model.slots.length === saved.materials.length && saved.visible.length === model.parts.length, "model structure mismatch.");
       model.name = saved.name;
@@ -250,6 +252,6 @@ export async function decodeProject(bytes: Uint8Array, checkSize: (w: number, h:
       finite(paint.brushSize) && paint.brushSize >= 1 && finite(paint.brushOpacity) && paint.brushOpacity >= 0 && paint.brushOpacity <= 1 &&
       finite(paint.tolerance) && paint.tolerance >= 0 && paint.tolerance <= 255 && typeof paint.contiguous === "boolean", "invalid paint settings.");
     return { model, documents, openDocuments: manifest.openDocuments, activeDocument: manifest.activeDocument, hiddenFaces,
-      previewMode: manifest.previewMode, previewEdges: manifest.previewEdges, paint };
+      previewMode: "studio", previewEdges: manifest.previewEdges, paint };
   } catch (error) { if (model) disposeModel(model);throw error; }
 }

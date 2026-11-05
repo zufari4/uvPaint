@@ -6,7 +6,7 @@ const server = await createServer();
 await server.listen();
 const env = { ...process.env, UVPAINT_DEV_URL: "http://127.0.0.1:5173" };
 delete env.ELECTRON_RUN_AS_NODE;
-const app = await electron.launch({ args: ["."], env });
+const app = await electron.launch({ args: [".", `--user-data-dir=${process.cwd()}/test-results/material-profile`], env });
 try {
   const page = await app.firstWindow();
   const errors = [];
@@ -227,9 +227,9 @@ try {
     const { editor: e } = await import("/src/core/editor.ts");
     return e.output.toDataURL();
   });
-  await page.getByLabel("Preview shading").selectOption("unlit");
+  await page.evaluate(async () => { const { editor:e }=await import("/src/core/editor.ts"); e.setStudioLighting({exposure:.8}); });
   await page.getByLabel("Show model edges").check();
-  await page.getByLabel("Preview shading").selectOption("studio");
+
   assert.equal(
     await page.evaluate(async () => {
       const { editor: e } = await import("/src/core/editor.ts");

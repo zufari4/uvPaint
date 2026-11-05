@@ -9,6 +9,7 @@ import { OptionsBar } from "./OptionsBar";
 import { ToolRail } from "./ToolRail";
 import { SizeDialog, HelpDialog } from "./Dialogs";
 import { Notice } from "./Notice";
+import { ModelLoading } from "./ModelLoading";
 import { SettingsDialog } from "./SettingsDialog";
 import { WindowControls } from "./WindowControls";
 import { AppMenu } from "./AppMenu";
@@ -61,7 +62,7 @@ export function App() {
           <WindowControls />
         </div>
       </header>
-      <div className="material-bar">
+      <div className="material-bar" inert={!!e.modelLoading}>
         <span className="material-label">MATERIAL</span>
         <select
           aria-label="Active material"
@@ -103,7 +104,7 @@ export function App() {
         )}
         <div className="spacer" />
       </div>
-      <main className="workspace">
+      <main className="workspace" inert={!!e.modelLoading} aria-busy={!!e.modelLoading}>
         <ToolRail />
         <div className="workspace-content">
           <OptionsBar />
@@ -147,6 +148,7 @@ export function App() {
         </div>
       </main>
       <Notice />
+      <ModelLoading />
       {e.imageImport && <ImageImportDialog key={e.imageImport.id} source={e.imageImport} />}
       {e.islandMenu && <IslandMenu />}
       {e.error && (

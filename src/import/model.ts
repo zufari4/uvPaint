@@ -5,11 +5,14 @@ import type { ModelAsset, TextureDocument, MaterialSlot } from "../types";
 import { canvas, context } from "../core/canvas";
 import { extractIslands } from "../tools/uv";
 import { syncMaterial } from "../render/material";
+export type ModelProgress = (stage: string, detail?: string) => Promise<void>;
 export async function loadGLB(
   bytes: ArrayBuffer,
   name: string,
   check: (w: number, h: number) => Promise<void>,
+  progress?: ModelProgress,
 ) {
+  await progress?.("Reading geometry and textures");
   const manager = new THREE.LoadingManager();
   manager.setURLModifier((url) => {
     if (url.startsWith("blob:") || url.startsWith("data:")) return url;
@@ -19,7 +22,7 @@ export async function loadGLB(
   });
   const loader = new GLTFLoader(manager);
   const gltf = await loader.parseAsync(bytes, "");
-  const result = await prepareModel(gltf.scene, name, check);
+  const result = await prepareModel(gltf.scene, name, check, progress);
   result.model.source = { kind: "glb", bytes: new Uint8Array(bytes.slice(0)) };
   return result;
 }
@@ -27,6 +30,7 @@ export async function prepareModel(
   scene: THREE.Group,
   name: string,
   check: (w: number, h: number) => Promise<void>,
+  progress?: ModelProgress,
 ) {
   const slots: MaterialSlot[] = [],
     parts: THREE.Mesh[] = [],
@@ -38,7 +42,8 @@ export async function prepareModel(
   });
   if (!meshes.length)
     throw new Error("This GLB contains no renderable meshes.");
-  for (const mesh of meshes) {
+  for (const [meshIndex, mesh] of meshes.entries()) {
+    await progress?.("Preparing materials", `${meshIndex + 1} / ${meshes.length} objects`);
     parts.push(mesh);
     const materials = Array.isArray(mesh.material)
       ? mesh.material
@@ -193,7 +198,8 @@ export async function prepareModel(
       ? replacements
       : replacements[0];
   }
-  for (const doc of docs) {
+  for (const [docIndex, doc] of docs.entries()) {
+    await progress?.("Building UV islands", `${docIndex + 1} / ${docs.length} materials`);
     const slot = slots.find((s) => s.id === doc.id)!;
     if (!slot.uvSets.includes(doc.uvSet)) doc.uvSet = slot.uvSets[0] ?? "uv";
     doc.islands = extractIslands(scene, doc.id, doc.uvSet);
@@ -202,6 +208,7 @@ export async function prepareModel(
     slot.documents.push(doc);
     for (const [sourceIndex, source] of slot.sourceTextures.entries()) {
       if (source.usage === "Base Color") continue;
+      await progress?.("Building UV islands", `${docIndex + 1} / ${docs.length} materials · ${source.usage}`);
       const image = source.texture.image as { width: number; height: number };
       await check(image.width, image.height);
       const pixels = canvas(image.width, image.height);

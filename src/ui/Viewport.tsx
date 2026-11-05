@@ -2,16 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { ViewportNavigation } from "./viewportNavigation";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { Box, Maximize, Maximize2, Minimize2 } from "lucide-react";
+import { Box, Maximize2, Minimize2 } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
 import { ModelPartsMenu } from "./ModelPartsMenu";
+import { PreviewOptions } from "./PreviewOptions";
 import { ViewCube } from "./ViewCube";
 import { IslandPreview } from "../render/island-preview";
 import { islandForFace } from "../tools/uv";
 import { faceKey } from "../tools/uv-guides";
 export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onToggleExpand: () => void }) {
   const [navigationState,setNavigationState]=useState<ViewportNavigation|null>(null);
+  const savedView = useRef<{ scene: string; camera: ReturnType<ViewportNavigation["snapshot"]> } | null>(null);
   const e = useEditor(),
     host = useRef<HTMLDivElement>(null),
     fitRef = useRef<() => void>(() => {});
@@ -30,7 +32,7 @@ export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onTo
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.setClearColor(0, 0);
     container.appendChild(renderer.domElement);
     renderer.domElement.dataset.testid = "preview-canvas";
@@ -46,8 +48,9 @@ export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onTo
     const environment = pmrem.fromScene(room, 0.04);
     room.dispose();
     pmrem.dispose();
-    scene.add(new THREE.HemisphereLight(0xc7d9ff, 0x343a45, 1));
-    const light = new THREE.DirectionalLight(0xfff1de, 3);
+    const fillLight = new THREE.HemisphereLight(0xc7d9ff, 0x343a45, e.studioLighting.fill);
+    scene.add(fillLight);
+    const light = new THREE.DirectionalLight(0xfff1de, e.studioLighting.key);
     light.position.set(4, 7, 5);
     scene.add(light);
     renderer.shadowMap.enabled = true;
@@ -86,15 +89,19 @@ export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onTo
     if (model) {
       for (const slot of model.slots) {
         slot.studio.envMap = environment.texture;
-        slot.studio.envMapIntensity = 2.5;
+        slot.studio.envMapIntensity = e.studioLighting.environment;
         slot.studio.needsUpdate = true;
       }
       for (const part of model.parts) {
         part.castShadow = true;
         part.receiveShadow = true;
+        const studioMaterial = (mat: THREE.Material) =>
+          model.slots.find(slot => slot.id === mat.userData.slotId)?.studio ?? mat;
+        part.material = Array.isArray(part.material)
+          ? part.material.map(studioMaterial) : studioMaterial(part.material);
       }
     }
-    let lastMode = "";
+    let lastLighting: typeof e.studioLighting | undefined;
     const fit = () => {
       if (!model) return;
       const box = new THREE.Box3().setFromObject(model.scene),
@@ -104,7 +111,8 @@ export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onTo
       navigation.fit(center, radius);
     };
     fitRef.current = fit;
-    fit();
+    if (model && savedView.current?.scene === model.scene.uuid) navigation.restore(savedView.current.camera);
+    else fit();
     const resize = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
       if (!width || !height) return;
@@ -118,27 +126,13 @@ export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onTo
     const clearHover = () => { hoverFaces = noHover; hoverIsland = undefined; };
     const animate = () => {
       frame = requestAnimationFrame(animate);
-      if (lastMode !== e.previewMode) {
-        lastMode = e.previewMode;
-        const studio = lastMode === "studio";
-        ground.visible = studio;
-        renderer.toneMapping = studio
-          ? THREE.ACESFilmicToneMapping
-          : THREE.NoToneMapping;
-        renderer.toneMappingExposure = 1;
-        if (model)
-          for (const part of model.parts) {
-            const swap = (mat: THREE.Material) => {
-              const slot = model.slots.find(
-                (s) => s.id === mat.userData.slotId,
-              );
-              return slot ? (studio ? slot.studio : slot.preview) : mat;
-            };
-            part.material = Array.isArray(part.material)
-              ? part.material.map(swap)
-              : swap(part.material);
-          }
+      if (lastLighting !== e.studioLighting) {
+        lastLighting = e.studioLighting;
+        light.intensity = lastLighting.key;
+        fillLight.intensity = lastLighting.fill;
+        for (const slot of model?.slots ?? []) slot.studio.envMapIntensity = lastLighting.environment;
       }
+      renderer.toneMappingExposure = e.studioLighting.exposure;
       if (e.imageImport) clearHover();
       islands.sync(e.hiddenFaces,e.selectedFaces,e.previewEdges,hoverFaces);
       navigation.orbit.update();
@@ -205,6 +199,7 @@ export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onTo
     renderer.domElement.addEventListener("pointermove",hover);
     renderer.domElement.addEventListener("pointerleave",clearHover);
     return () => {
+      if (model) savedView.current = { scene: model.scene.uuid, camera: navigation.snapshot() };
       cancelAnimationFrame(frame);
       resize.disconnect();
       navigation.dispose();
@@ -226,44 +221,11 @@ export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onTo
   }, [e.model]);
   return (
     <section className="preview-pane">
-      <div className="pane-heading preview-toolbar">
-        <ModelPartsMenu />
-        <div className="mini-actions">
-          <span className="live-dot" />
-          <select
-            aria-label="Preview shading"
-            title="Display only: PNG colors are unchanged"
-            value={e.previewMode}
-            onChange={(ev) => {
-              e.previewMode = ev.target.value as typeof e.previewMode;
-              e.emit();
-            }}
-          >
-            <option value="unlit">Texture · Unlit</option>
-            <option value="studio">Studio · Lit</option>
-          </select>
-          <label title="Highlight geometry edges (preview only)">
-            <input
-              type="checkbox"
-              aria-label="Show model edges"
-              checked={e.previewEdges}
-              onChange={(ev) => {
-                e.previewEdges = ev.target.checked;
-                e.emit();
-              }}
-            />{" "}
-            Edges
-          </label>
-          <Button title="Frame model" onClick={() => fitRef.current()}>
-            <Maximize size={14} />
-          </Button>
-          <Button title={expanded ? "Restore split view" : "Expand 3D view"} aria-pressed={expanded} onClick={onToggleExpand}>
-            {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          </Button>
-        </div>
-      </div>
       <div className={`preview-stage ${e.pickingLayerIsland ? "picking-island" : ""}`}>
         <div className="preview-renderer" ref={host} />
+        <Button className="preview-expand" title={expanded ? "Restore split view" : "Expand 3D view"} aria-pressed={expanded} onClick={onToggleExpand}>
+          {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </Button>
         {!e.model && (
           <div className="preview-empty">
             <Box size={76} strokeWidth={0.6} />
@@ -273,14 +235,13 @@ export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onTo
               <br />
               your texture come to life as you edit.
             </p>
-            <span>NO LIGHTING · TRUE BASE COLOR</span>
           </div>
         )}
         <ViewCube navigation={navigationState} />
+        <PreviewOptions onFrameModel={() => fitRef.current()} />
         {e.model && (
           <div className="model-title">
-            <span className="live-dot" />
-            {e.model.name}
+            <ModelPartsMenu />
           </div>
         )}
       </div>

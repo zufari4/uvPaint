@@ -20,12 +20,14 @@ import {
   floodMask,
 } from "../tools/selection";
 import { loadGLB, disposeModel } from "../import/model";
+import { prepareReload } from "../import/reload-model";
 import { demoModel } from "../import/demo";
 import { decodeImage, pickFile } from "../import/files";
 import { exportPNG } from "../export/png";
 import { syncMaterial } from "../render/material";
 import { transferAlpha } from "../tools/alpha-transfer";
 import { loadPreferences, preferenceKey } from "./preferences";
+import { defaultStudioLighting, normalizeStudioLighting, type StudioLighting } from "./studio-lighting";
 import { faceKey } from "../tools/uv-guides";
 import { sourceGeometry } from "../render/mesh-source";
 import { encodeProject, decodeProject } from "./project";
@@ -59,8 +61,9 @@ export class Editor {
   uvColor = "#a5ece0";
   uvOpacity = 0.65;
   textScale = 1.4;
-  previewMode: "unlit" | "studio" = "studio";
+  readonly previewMode = "studio" as const;
   previewEdges = true;
+  studioLighting = { ...defaultStudioLighting };
   transform: TransformSession | null = null;
   private transformFrame = 0;
   private pendingTransform: { session: TransformSession; points: Point[] } | null = null;
@@ -71,6 +74,8 @@ export class Editor {
   notice: { id: number; text: string } | null = null;
   error = "";
   busy = false;
+  modelLoading: { name: string; stage: string; detail?: string } | null = null;
+  private modelProgressTime = 0;
   revision = 0;
   pixelsRevision = 0;
   clipboard: HTMLCanvasElement | null = null;
@@ -83,6 +88,7 @@ export class Editor {
     this.uvOpacity = preferences.uvOpacity;
     this.textScale = preferences.textScale;
     this.uvDisplay = preferences.uvDisplay;
+    this.studioLighting = preferences.studioLighting;
   }
   setUVDisplay(mode: UVDisplayMode) { this.uvDisplay = mode; this.savePreferences(); }
   get textureIsolated() { return this.textureFocusEnabled && !!this.layer?.uvBinding?.island.faces?.length; }
@@ -149,6 +155,10 @@ export class Editor {
     this.textScale = Math.max(0.8, Math.min(2.2, value));
     this.savePreferences();
   }
+  setStudioLighting(patch: Partial<StudioLighting>) {
+    this.studioLighting = normalizeStudioLighting(patch, this.studioLighting);
+    this.savePreferences();
+  }
   private savePreferences() {
     try {
       localStorage.setItem(
@@ -158,6 +168,7 @@ export class Editor {
           uvOpacity: this.uvOpacity,
           textScale: this.textScale,
           uvDisplay: this.uvDisplay,
+          studioLighting: this.studioLighting,
         }),
       );
     } catch {
@@ -255,12 +266,21 @@ export class Editor {
     probe.width = probe.height = 1;
   }
   async openModel() {
-    const file = await pickFile("model");
-    if (file) await this.importModel(file.bytes, file.name);
+    try {
+      const file = await pickFile("model", name => {
+        this.modelLoading = { name, stage: "Reading file" };this.emit();
+      });
+      if (file) await this.importModel(file.bytes, file.name, file.sourcePath);
+    } finally { this.modelLoading = null;this.emit(); }
   }
   async openProject() {
     const file = await pickFile("project");
     if (file) await this.importProject(file.bytes, file.name, file.handle);
+  }
+  async openRecentProject(id: string) {
+    if (!window.desktop) return;
+    const file = await window.desktop.openRecentProject(id);
+    await this.importProject(file.bytes, file.name, file.handle);
   }
   async projectBytes() {
     if (!this.doc) throw new Error("Create a texture or open a model first.");
@@ -305,19 +325,112 @@ export class Editor {
       if (slot) syncMaterial(slot, doc, composite(doc));
     }
     this.activeId = state.documents[state.activeDocument].id;
-    this.hiddenFaces = state.hiddenFaces;this.previewMode = state.previewMode;this.previewEdges = state.previewEdges;
+    this.hiddenFaces = state.hiddenFaces;this.previewEdges = state.previewEdges;
     this.textureFocusEnabled = true;
     this.tool = state.paint.tool;this.color = state.paint.color;this.backgroundColor = state.paint.backgroundColor;
     this.brushSize = state.paint.brushSize;this.brushOpacity = state.paint.brushOpacity;this.tolerance = state.paint.tolerance;this.contiguous = state.paint.contiguous;
     this.islandMenu = null;this.pickingLayerIsland = false;this.cloneSource = null;this.output = null;
     this.projectName = name;this.projectHandle = handle;
     this.emit(true);this.notify(`Project opened: ${name}`);
+    if (handle && window.desktop) await window.desktop.rememberProject(handle);
   }
-  async importModel(bytes: Uint8Array, name: string) {
-    const result = await loadGLB(new Uint8Array(bytes).buffer, name, (w, h) =>
-      this.checkSize(w, h),
-    );
-    this.install(result);
+  async importModel(bytes: Uint8Array, name: string, sourcePath?: string) {
+    try {
+      const progress = (stage: string, detail?: string) => this.reportModelLoading(name, stage, detail);
+      const result = await loadGLB(new Uint8Array(bytes).buffer, name,
+        (w, h) => this.checkSize(w, h), progress);
+      if (result.model.source?.kind === "glb") result.model.source.path = sourcePath;
+      await progress("Preparing 3D preview");
+      this.install(result);
+      await this.yieldModelLoading();
+    } finally { this.modelLoading = null;this.emit(); }
+  }
+  async reloadModel() {
+    const previous = this.model;
+    if (previous?.source?.kind !== "glb") throw new Error("Open a GLB model before reloading it.");
+    if (!window.desktop) throw new Error("Reload GLB requires the desktop application.");
+    let replacement: ModelAsset | null = null;
+    try {
+      let file;
+      if (previous.source.path) {
+        await this.reportModelLoading(previous.name, "Reading original GLB");
+        file = await window.desktop.reloadModel(previous.source.path);
+      } else {
+        // Older projects contain embedded GLB bytes but no source path. Locate
+        // the file once, without replacing the current document or its layers.
+        file = await pickFile("model");
+        if (!file) return;
+      }
+      const result = await loadGLB(new Uint8Array(file.bytes).buffer, file.name,
+        (w, h) => this.checkSize(w, h), (stage, detail) => this.reportModelLoading(file.name, stage, detail));
+      replacement = result.model;
+      if (replacement.source?.kind === "glb") replacement.source.path = file.sourcePath;
+      await this.reportModelLoading(file.name, "Preserving layers and UV bindings");
+      const { migrate } = prepareReload(previous, replacement);
+      const stored = new Map<string, TextureDocument>();
+      for (const slot of previous.slots) for (const doc of slot.documents) stored.set(this.documentKey(doc), doc);
+      for (const doc of this.textureDocuments.values()) stored.set(this.documentKey(doc), doc);
+      for (const doc of this.docs.values()) stored.set(this.documentKey(doc), doc);
+      const migrated = new Map<string, TextureDocument>(), keys = new Map<string, string>();
+      for (const [key, doc] of stored) {
+        const updated = migrate(doc), nextKey = this.documentKey(updated);
+        migrated.set(nextKey, updated);keys.set(key, nextKey);
+      }
+      const docs = new Map([...this.docs].map(([id, doc]) => [id, migrate(doc)]));
+      const history = new Map<string, History>();
+      for (const [key, old] of this.histories) {
+        const updated = new History();
+        updated.undoStack = old.undoStack.map(entry => ({ ...entry, doc: migrate(entry.doc) }));
+        updated.redoStack = old.redoStack.map(entry => ({ ...entry, doc: migrate(entry.doc) }));
+        history.set(keys.get(key) ?? key, updated);
+      }
+      for (const slot of replacement.slots) {
+        slot.documents = slot.documents.map(doc => migrated.get(this.documentKey(doc)) ?? doc);
+        if (!docs.has(slot.id)) docs.set(slot.id, slot.documents[0]);
+        for (const doc of slot.documents) migrated.set(this.documentKey(doc), doc);
+        const current = docs.get(slot.id)!;
+        syncMaterial(slot, current, composite(current));
+      }
+      const transform = this.transform ? { ...this.transform, before: migrate(this.transform.before) } : null;
+      if (transform) {
+        const layer = docs.get(this.activeId)?.layers.find(layer => layer.id === transform.layerId);
+        transform.clip = layer?.uvMask ?? transform.clip;
+        transform.outside = layer?.uvMask ? masked(layer.canvas, layer.uvMask, true) : undefined;
+      }
+      await this.reportModelLoading(file.name, "Preparing 3D preview");
+      this.model = replacement;this.docs = docs;this.textureDocuments = migrated;this.histories = history;this.transform = transform;
+      replacement = null;
+      this.output = null;this.emit(true);
+      disposeModel(previous);
+      await this.yieldModelLoading();
+    } finally {
+      if (replacement) disposeModel(replacement);
+      this.modelLoading = null;this.emit();
+    }
+  }
+  async importModelFile(file: File) {
+    try {
+      await this.reportModelLoading(file.name, "Reading file");
+      await this.importModel(new Uint8Array(await file.arrayBuffer()), file.name, window.desktop?.modelFilePath(file) || undefined);
+    } finally { this.modelLoading = null;this.emit(); }
+  }
+  private async reportModelLoading(name: string, stage: string, detail?: string) {
+    const now = performance.now();
+    if (this.modelLoading?.name === name && this.modelLoading.stage === stage && now - this.modelProgressTime < 50) return;
+    this.modelProgressTime = now;
+    this.modelLoading = { name, stage, detail };this.emit();
+    await this.yieldModelLoading();
+  }
+  private yieldModelLoading() {
+    return new Promise<void>(resolve => {
+      // Paint the stage before expensive work. The fallback also allows loading
+      // to finish when the window is minimized and animation frames pause.
+      let frame = 0;
+      const timer = setTimeout(() => { cancelAnimationFrame(frame);resolve(); }, 100);
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => { clearTimeout(timer);resolve(); });
+      });
+    });
   }
   async sample() {
     this.install(await demoModel((w, h) => this.checkSize(w, h)));
@@ -538,6 +651,7 @@ export class Editor {
         { x: offset.x, y: offset.y + image.height },
       ];
     this.transform = {
+      initialPlacement: true,
       kind: "free",
       source: image,
       rest,
@@ -549,9 +663,6 @@ export class Editor {
     };
     this.tool = "move";
     this.updateTransform(points);
-    this.notify(
-      `Imported ${image.width} × ${image.height} at native size. Full source retained while placing; Enter applies.`,
-    );
   }
   updateLayer(id: string, patch: Partial<Omit<Layer, "canvas" | "id">>) {
     this.change("Layer properties", (d) => {
@@ -594,10 +705,7 @@ export class Editor {
     this.emit();
   }
   pickLayerIsland(id: number) {
-    if (id < 0) {
-      this.notify("Choose a UV island of the active material. Escape cancels picking.");
-      return;
-    }
+    if (id < 0) return;
     this.setLayerIsland(id);
   }
   duplicateLayer() {
@@ -632,23 +740,19 @@ export class Editor {
     this.change("Merge down", (d) => {
       const lower = d.layers[index - 1],
         upper = d.layers[index];
-      const merged = composite({ ...d, layers: [lower, upper] });
+      // Keep the destination mask live instead of baking it into its pixels twice.
+      const merged = composite({ ...d, layers: [{ ...lower, uvMask: null }, upper] });
       d.layers.splice(index - 1, 2, {
         ...lower,
-        name: lower.name + " + " + upper.name,
         canvas: merged,
-        uvMask: null,
-        uvBinding: undefined,
         placement: undefined,
         opacity: 1,
         blend: "source-over",
         visible: true,
       });
       d.activeId = lower.id;
+      d.selectedIslands = lower.uvBinding?.uvSet === d.uvSet ? [lower.uvBinding.island.id] : [];
     });
-    this.notify(
-      "Merged pair flattened against transparency; backdrop-dependent blends can change when merged.",
-    );
   }
   undo() {
     if (this.pickingLayerIsland) { this.pickingLayerIsland = false; this.emit(); }
@@ -880,6 +984,10 @@ export class Editor {
     this.selectIsland(island.id, add);
   }
   selectCanvasIsland(id: number, add = false) {
+    if (id < 0) {
+      this.clearCanvasSelection();
+      return;
+    }
     this.confirmTransform();
     const d = this.doc;
     if (!d) return;
@@ -887,9 +995,22 @@ export class Editor {
     const linked = candidates.find(l => l.id === d.activeId)
       ?? candidates.slice().reverse().find(l => l.visible) ?? candidates.at(-1);
     const selection = [...d.selectedIslands];
-    if (linked && linked.id !== d.activeId) this.selectLayer(linked.id);
+    // Restore 2D focus even when this linked layer is already active after
+    // clearing the frame. This never touches manual 3D face visibility.
+    if (linked) this.selectLayer(linked.id);
     if (add) d.selectedIslands = selection;
     this.selectIsland(id, add);
+  }
+  clearCanvasSelection() {
+    this.confirmTransform();
+    this.textureFocusEnabled = false;
+    this.pickingLayerIsland = false;
+    this.islandMenu = null;
+    if (this.doc) {
+      this.doc.selectedIslands = [];
+      this.doc.selection = null;
+    }
+    this.emit();
   }
   setTool(tool: Tool) {
     this.pickingLayerIsland = false;
@@ -933,10 +1054,11 @@ export class Editor {
         original: points.map((p) => ({ ...p })),
         before,
         layerId: this.layer.id,
-        clip: editingMask(this.doc, false),
+        clip: this.layer.uvMask ?? null,
+        outside: this.layer.uvMask ? masked(this.layer.canvas, this.layer.uvMask, true) : undefined,
       };
       this.tool = "move";
-      this.updateTransform(points);
+      this.emit();
       return;
     }
     const picked = masked(this.layer.canvas, selection);
@@ -983,13 +1105,11 @@ export class Editor {
       original: points.map((p) => ({ ...p })),
       before,
       layerId: this.layer.id,
-      clip: editingMask(this.doc, false),
+      clip: this.layer.uvMask ?? null,
+      outside: this.layer.uvMask ? masked(this.layer.canvas, this.layer.uvMask, true) : undefined,
     };
     this.tool = "move";
-    this.updateTransform(points);
-    this.notify(
-      "Drag handles or the fragment. Enter applies · Escape cancels.",
-    );
+    this.emit();
   }
   scheduleTransform(points: Point[]) {
     if (!this.transform) return;
@@ -1034,7 +1154,6 @@ export class Editor {
       const next = snapshot(d);
       const layer = next.layers.find((l) => l.id === t.layerId)!;
       layer.canvas = c;
-      layer.uvMask = t.clip;
       layer.placement = t.before.selection ? undefined : {
         source: t.source,
         rest: t.rest,
@@ -1071,6 +1190,13 @@ export class Editor {
   confirmTransform() {
     this.flushTransform();
     if (!this.transform) return;
+    // Merely showing the frame (or returning it to its starting position)
+    // must preserve the exact pixels, layer mask and undo history.
+    if (!this.transform.initialPlacement && this.transform.points.every((p, i) =>
+      Math.abs(p.x - this.transform!.original[i].x) < 1e-8 && Math.abs(p.y - this.transform!.original[i].y) < 1e-8)) {
+      this.cancelTransform();
+      return;
+    }
     this.history.push(
       this.transform.kind === "mesh"
         ? "Mesh warp"

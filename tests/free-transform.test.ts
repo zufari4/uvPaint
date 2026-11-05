@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dragTransform, hitTransform } from "../src/tools/free-transform";
+import { dragTransform, hitTransform, insideTransform, transformResizeCursor } from "../src/tools/free-transform";
 const frame = [
   { x: 10, y: 20 },
   { x: 110, y: 20 },
@@ -7,6 +7,23 @@ const frame = [
   { x: 10, y: 70 },
 ];
 describe("Free transform gestures", () => {
+  it("orients all resize cursors with rotated and mirrored frame handles", () => {
+    const cursors = (points: typeof frame) => Array.from({length:8}, (_,i) => transformResizeCursor(points,i));
+    expect(cursors(frame)).toEqual(["nwse-resize","nesw-resize","nwse-resize","nesw-resize","ns-resize","ew-resize","ns-resize","ew-resize"]);
+    expect(cursors(frame.map(p=>({x:-p.y,y:p.x})))).toEqual(["nesw-resize","nwse-resize","nesw-resize","nwse-resize","ew-resize","ns-resize","ew-resize","ns-resize"]);
+    expect(cursors(frame.map(p=>({x:(p.x-p.y)/Math.SQRT2,y:(p.x+p.y)/Math.SQRT2})))).toEqual(["ns-resize","ew-resize","ns-resize","ew-resize","nesw-resize","nwse-resize","nesw-resize","nwse-resize"]);
+    expect(cursors(frame.map(p=>({x:-p.x,y:p.y})))).toEqual(["nesw-resize","nwse-resize","nesw-resize","nwse-resize","ns-resize","ew-resize","ns-resize","ew-resize"]);
+    expect(cursors(frame.map(p=>({x:-p.x,y:-p.y})))).toEqual(cursors(frame));
+  });
+  it("tests the actual rotated frame and mesh perimeter rather than their bounding box", () => {
+    const diamond=[{x:0,y:50},{x:50,y:0},{x:100,y:50},{x:50,y:100}];
+    expect(insideTransform(diamond,{x:50,y:50})).toBe(true);
+    expect(insideTransform(diamond,{x:25,y:25})).toBe(true);
+    expect(insideTransform(diamond,{x:5,y:5})).toBe(false);
+    const mesh=Array.from({length:16},(_,i)=>({x:i%4*20,y:Math.floor(i/4)*20}));
+    expect(insideTransform(mesh,{x:30,y:30})).toBe(true);
+    expect(insideTransform(mesh,{x:65,y:30})).toBe(false);
+  });
   it("rotates outside a rotated frame, moves inside and prioritizes handles", () => {
     const diamond=[{x:0,y:50},{x:50,y:0},{x:100,y:50},{x:50,y:100}];
     expect(hitTransform(diamond,{x:50,y:50},1,true).action).toBe("move");

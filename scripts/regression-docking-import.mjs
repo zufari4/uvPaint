@@ -12,9 +12,31 @@ try {
   await page.waitForSelector('.empty-canvas');
   await page.evaluate(() => localStorage.removeItem('uvpaint.layersDock')); await page.reload(); await page.waitForSelector('.empty-canvas');
   await page.evaluate(async () => { window.e = (await import('/src/core/editor.ts')).editor; await e.sample(); });
+  const viewOptions=page.getByRole('group',{name:'3D view options'});
+  check(await page.locator('.options-bar .preview-options').count()===0 && await page.locator('.preview-stage .preview-options').count()===1 && await page.locator('.preview-toolbar').count()===0,'3D controls are inside the viewport without a header strip');
+  const ob=await page.locator('.preview-stage').boundingBox(),vb=await viewOptions.boundingBox();
+  check(Math.abs(vb.x-ob.x-12)<1 && Math.abs(vb.y+vb.height-ob.y-ob.height+8)<1,'Edges and Frame model sit at the bottom-left of the 3D viewport');
+  const parts=page.locator('.model-title').getByTitle('Model parts',{exact:true}),pb=await parts.boundingBox();
+  check(pb.x===ob.x+12 && pb.y===ob.y+8,'Model parts replaces the file name at the top-left');
+  await parts.click();
+  check(await page.getByRole('group',{name:'Model parts visibility'}).isVisible(),'Moved model parts menu opens');
+  const toggle=page.getByRole('group',{name:'Model parts visibility'}).getByRole('button').first();
+  await toggle.click();check(await page.evaluate(()=>!e.model.parts[0].visible),'Overlay menu toggles model part visibility');await toggle.click();
+  await page.keyboard.press('Escape');
+  await viewOptions.getByLabel('Show model edges').uncheck();
+  check(await page.evaluate(()=>e.previewMode==='studio'&&!e.previewEdges),'Moved edges control updates the studio preview');
+  await viewOptions.getByLabel('Show model edges').check();
+  await viewOptions.getByTitle('Frame model',{exact:true}).click();
+  const stage=await page.locator('.preview-stage').boundingBox(),pane=await page.locator('.preview-pane').boundingBox(),expand3D=page.getByTitle('Expand 3D view',{exact:true}),eb=await expand3D.boundingBox();
+  await expand3D.hover();
+  check(stage.y===pane.y && Math.abs(eb.y-stage.y-8)<1 && Math.abs(eb.x+eb.width-stage.x-stage.width+8)<1 && await expand3D.evaluate(el=>getComputedStyle(el).backgroundColor)==='rgba(0, 0, 0, 0)','3D expand floats transparently at the top-right, including on hover');
   check(await page.locator('.texture-meta,.material-channel,.canvas-label').count() === 0 && await page.getByTitle('Material textures and transparency').count() === 0, 'Removed texture metadata, channel labels and Material settings stay absent');
   const panel = page.locator('.layers-sidebar'), heading = page.getByLabel('Layers panel docking');
+  check(await panel.locator('.section-heading').count()===0 && (await heading.boundingBox()).height===10,'Layers header is replaced with a thin docking strip');
   check(await panel.getAttribute('data-dock')==='top-right','Layers default to the top-right corner');
+  check(await page.locator('.texture-view-toolbar').count()===0,'Texture editor has no header strip');
+  const texture=await page.locator('.texture-pane').boundingBox(),host=await page.locator('.canvas-host').boundingBox();
+  check(Math.abs(texture.y-host.y)<1,'Canvas uses the height formerly occupied by its header');
   for (const corner of ['top-left', 'top-right', 'bottom-left', 'bottom-right']) {
     const b = await page.locator('.canvas-host').boundingBox(), h = await heading.boundingBox();
     await page.mouse.move(h.x + 70, h.y + h.height / 2); await page.mouse.down();
@@ -24,6 +46,10 @@ try {
     check(await panel.getAttribute('data-dock') === corner && Math.abs((corner.endsWith('left') ? r.x-b.x : r.x+r.width-b.x-b.width)) < 1 && Math.abs((corner.startsWith('top') ? r.y-b.y : r.y+r.height-b.y-b.height)) < 1, `Layers dock flush to ${corner}`);
     const z = await page.locator('.canvas-host > .canvas-zoom').boundingBox();
     check(Math.abs(z.y+z.height-(b.y+b.height-8))<1 && (corner==='bottom-left' ? Math.abs(z.x+z.width-(b.x+b.width-8))<1 : z.x<b.x+20), 'Zoom moves to bottom-right for bottom-left layers, otherwise stays bottom-left');
+    const expand=page.getByTitle('Expand texture editor',{exact:true}),a=await expand.boundingBox();
+    check(Math.abs(a.y-b.y-8)<1 && (corner==='top-right'?Math.abs(a.x-b.x-8)<1:Math.abs(a.x+a.width-b.x-b.width+8)<1),'Expand button avoids Layers and otherwise stays top-right');
+    check(!(a.x<r.x+r.width&&a.x+a.width>r.x&&a.y<r.y+r.height&&a.y+a.height>r.y),'Expand button does not overlap the Layers panel');
+    check(await expand.evaluate(el=>getComputedStyle(el).backgroundColor)==='rgba(0, 0, 0, 0)','Expand button has no background');
   }
   check(await page.locator('.canvas-host > .canvas-zoom').evaluate(el => getComputedStyle(el).backgroundColor) === 'rgba(0, 0, 0, 0)', 'Zoom has no background');
   await heading.focus(); await page.keyboard.press('ArrowUp'); await page.reload(); await page.waitForSelector('.empty-canvas');

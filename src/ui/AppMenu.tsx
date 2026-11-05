@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Menu, Settings, HelpCircle, Info, FolderOpen, Download, Save, SaveAll } from "lucide-react";
+import { Menu, Settings, HelpCircle, Info, FolderOpen, Download, Save, SaveAll, RefreshCw } from "lucide-react";
 import { useEditor } from "./hooks";
+import { RecentProjectsMenu } from "./RecentProjectsMenu";
 export function AppMenu({
   onSelect,
 }: {
@@ -34,7 +35,7 @@ export function AppMenu({
         }
         const items = [
           ...(root.current?.querySelectorAll<HTMLButtonElement>(
-            "[role=menuitem]:not(:disabled)",
+            ":scope > .app-menu-popover > button:not(:disabled), [data-recent-trigger]:not(:disabled)",
           ) ?? []),
         ];
         const index = items.indexOf(
@@ -58,6 +59,7 @@ export function AppMenu({
       <button
         ref={trigger}
         title="Application menu"
+        disabled={!!e.modelLoading}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
@@ -74,9 +76,14 @@ export function AppMenu({
             onClick={() => { setOpen(false); trigger.current?.focus(); void e.run(() => e.openProject()); }}>
             <FolderOpen size={18} /> Open project
           </button>
+          <RecentProjectsMenu close={() => { setOpen(false);trigger.current?.focus(); }} />
           <button role="menuitem" title="Open GLB (Ctrl+O)" disabled={e.busy}
             onClick={() => { setOpen(false); trigger.current?.focus(); void e.run(() => e.openModel()); }}>
             <FolderOpen size={18} /> Open GLB
+          </button>
+          <button role="menuitem" disabled={e.busy || e.model?.source?.kind !== "glb"}
+            onClick={() => { setOpen(false);trigger.current?.focus();void e.run(() => e.reloadModel()); }}>
+            <RefreshCw size={18} /> Reload GLB
           </button>
           <button role="menuitem" title="Save project (Ctrl+S)" disabled={!e.doc || e.busy}
             onClick={() => { setOpen(false); trigger.current?.focus(); void e.run(() => e.saveProject()); }}>

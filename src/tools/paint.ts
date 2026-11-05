@@ -2,9 +2,7 @@ import type { Editor } from "../core/editor";
 import type { Point, TextureDocument } from "../types";
 import {
   canvas,
-  cloneCanvas,
   context,
-  masked,
   alphaBounds,
 } from "../core/canvas";
 import { snapshot } from "../core/history";
@@ -17,6 +15,12 @@ export class PaintStroke {
   last: Point;
   start: Point;
   clone: HTMLCanvasElement | null;
+  private working: HTMLCanvasElement;
+  private clipped: HTMLCanvasElement;
+  private dirty: { left: number; top: number; right: number; bottom: number } | null = null;
+  private frame = 0;
+  private ended = false;
+  private tool: Editor["tool"];
   constructor(
     public editor: Editor,
     p: Point,
@@ -45,13 +49,21 @@ export class PaintStroke {
       );
     this.before = snapshot(d);
     this.base = editor.layer!.canvas;
-    this.ink = canvas(d.width, d.height);
+    this.ink = canvas(d.width, d.height, false);
+    this.working = canvas(d.width, d.height, false);
+    context(this.working).drawImage(this.base, 0, 0);
+    this.clipped = canvas(d.width, d.height, false);
     this.clip = editingMask(d);
     this.last = this.start = p;
-    this.clone = editor.tool === "clone" ? cloneCanvas(this.base) : null;
+    this.tool = editor.tool;
+    this.clone = this.tool === "clone" ? this.base : null;
+    const next = snapshot(d);
+    next.layers.find(l => l.id === next.activeId)!.canvas = this.working;
+    editor.docs.set(editor.activeId, next);
     this.draw(p);
   }
   draw(p: Point) {
+    if (this.ended) return;
     const e = this.editor,
       ctx = context(this.ink);
     const distance = Math.hypot(p.x - this.last.x, p.y - this.last.y),
@@ -73,23 +85,60 @@ export class PaintStroke {
       }
       ctx.restore();
     }
+    const pad = e.brushSize / 2 + 2;
+    const bounds = {
+      left: Math.max(0, Math.floor(Math.min(this.last.x, p.x) - pad)),
+      top: Math.max(0, Math.floor(Math.min(this.last.y, p.y) - pad)),
+      right: Math.min(this.base.width, Math.ceil(Math.max(this.last.x, p.x) + pad)),
+      bottom: Math.min(this.base.height, Math.ceil(Math.max(this.last.y, p.y) + pad)),
+    };
+    if (bounds.right > bounds.left && bounds.bottom > bounds.top) {
+      const old = this.dirty;
+      this.dirty = old ? {
+        left: Math.min(old.left, bounds.left), top: Math.min(old.top, bounds.top),
+        right: Math.max(old.right, bounds.right), bottom: Math.max(old.bottom, bounds.bottom),
+      } : bounds;
+    }
     this.last = p;
-    const c = cloneCanvas(this.base);
-    const x = context(c);
+    if (!this.frame) this.frame = requestAnimationFrame(() => this.flush(true));
+  }
+  private flush(interactive: boolean) {
+    if (this.frame) cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    const dirty = this.dirty;
+    this.dirty = null;
+    const e = this.editor;
+    if (!dirty) { if (!interactive) e.emit(true); return; }
+    const { left, top } = dirty, w = dirty.right - left, h = dirty.bottom - top;
+    const draw = (ctx: CanvasRenderingContext2D, image: HTMLCanvasElement) =>
+      ctx.drawImage(image, left, top, w, h, left, top, w, h);
+    const ink = context(this.clipped);
+    ink.clearRect(left, top, w, h);
+    draw(ink, this.ink);
+    if (this.clip) {
+      ink.globalCompositeOperation = "destination-in";
+      draw(ink, this.clip);
+      ink.globalCompositeOperation = "source-over";
+    }
+    const x = context(this.working);
+    x.clearRect(left, top, w, h);
+    draw(x, this.base);
     x.globalAlpha = e.brushOpacity;
     x.globalCompositeOperation =
-      e.tool === "eraser" ? "destination-out" : "source-over";
-    x.drawImage(masked(this.ink, this.clip), 0, 0);
-    const next = snapshot(e.doc!);
-    next.layers.find((l) => l.id === next.activeId)!.canvas = c;
-    e.docs.set(e.activeId, next);
-    e.emit(true);
+      this.tool === "eraser" ? "destination-out" : "source-over";
+    draw(x, this.clipped);
+    x.globalAlpha = 1;
+    x.globalCompositeOperation = "source-over";
+    e.emit(true, interactive);
   }
   finish() {
+    if (this.ended) return;
+    this.flush(false);
+    this.ended = true;
     this.editor.history.push(
-      this.editor.tool === "eraser"
+      this.tool === "eraser"
         ? "Erase"
-        : this.editor.tool === "clone"
+        : this.tool === "clone"
           ? "Clone stamp"
           : "Brush stroke",
       this.before,
@@ -97,6 +146,11 @@ export class PaintStroke {
     this.editor.emit();
   }
   cancel() {
+    if (this.ended) return;
+    this.ended = true;
+    if (this.frame) cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    this.dirty = null;
     this.editor.docs.set(this.editor.activeId, this.before);
     this.editor.emit(true);
   }

@@ -72,7 +72,7 @@ export type MaterialSlot = {
   documents: TextureDocument[];
 };
 export type ModelAsset = {
-  source?: { kind: "glb"; bytes: Uint8Array } | { kind: "sample" };
+  source?: { kind: "glb"; bytes: Uint8Array; path?: string } | { kind: "sample" };
   name: string;
   scene: THREE.Group;
   slots: MaterialSlot[];
@@ -93,6 +93,8 @@ export type Tool =
   | "pan";
 export type SelectionMode = "replace" | "add" | "subtract";
 export type TransformSession = {
+  /** Newly imported pixels must keep their placement even without a drag. */
+  initialPlacement?: boolean;
   kind: "free" | "perspective" | "mesh";
   source: HTMLCanvasElement;
   rest: HTMLCanvasElement;
@@ -108,9 +110,15 @@ export type TransformSession = {
 declare global {
   interface Window {
     desktop?: {
+      reloadModel(path: string): Promise<{ name: string; bytes: Uint8Array; sourcePath: string }>;
+      modelFilePath(file: File): string;
+      onModelFileReading(callback: (name: string) => void): () => void;
+      recentProjects(): Promise<{ id: string; name: string; path: string }[]>;
+      rememberProject(handle: string): Promise<void>;
+      openRecentProject(id: string): Promise<{ name: string; bytes: Uint8Array; handle: string }>;
       openFile(
         kind: "model" | "image" | "project",
-      ): Promise<{ name: string; bytes: Uint8Array; handle?: string } | null>;
+      ): Promise<{ name: string; bytes: Uint8Array; handle?: string; sourcePath?: string } | null>;
       savePNG(bytes: Uint8Array, name: string): Promise<string | null>;
       saveProject(bytes: Uint8Array, name: string, handle?: string): Promise<{ name: string; handle: string } | null>;
       memory(): Promise<number>;

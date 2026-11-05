@@ -15,8 +15,10 @@ import { LayersDock } from "./LayersDock";
 import {
   dragTransform,
   hitTransform,
+  insideTransform,
   midpoint,
   transformHandles,
+  transformResizeCursor,
   type TransformHit,
 } from "../tools/free-transform";
 
@@ -33,6 +35,7 @@ type Gesture = {
   transformHit?: TransformHit;
   selectionFrame?: { mask: HTMLCanvasElement; bounds: SelectionBounds; next: SelectionBounds };
   selectOnClick?: boolean;
+  outsideFrame?: boolean;
   addIsland?: boolean;
   clientStart: Point;
   zoom: number;
@@ -406,6 +409,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       );
       g.handle = g.transformHit.handle;
       g.selectOnClick = e.tool === "move" && g.transformHit.handle < 0;
+      g.outsideFrame = !insideTransform(t.points, p);
       g.addIsland = ev.shiftKey;
       gesture.current = g;
       return;
@@ -428,7 +432,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     }
     if (e.tool === "clone" && ev.altKey) {
       e.cloneSource = p;
-      e.notify("Clone source set. Drag to paint from this point.");
+      e.emit();
       return;
     }
     if (["brush", "eraser", "clone"].includes(e.tool)) {
@@ -437,13 +441,9 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
         return;
       }
       if (p.x < 0 || p.y < 0 || p.x >= doc.width || p.y >= doc.height) {
-        e.notify(
-          "Paint inside the texture rectangle. Use Fit canvas to locate it.",
-        );
         return;
       }
       if (e.tool === "clone" && !e.cloneSource) {
-        e.notify("Alt-click a source point before using Clone Stamp.");
         return;
       }
       g.kind = "paint";
@@ -480,21 +480,11 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
           e.transform.kind === "free",
           ev.ctrlKey || ev.metaKey,
         );
-        const cursors = [
-          "nwse-resize",
-          "nesw-resize",
-          "nwse-resize",
-          "nesw-resize",
-          "ns-resize",
-          "ew-resize",
-          "ns-resize",
-          "ew-resize",
-        ];
         ev.currentTarget.style.cursor =
           hit.action === "rotate"
             ? "crosshair"
             : hit.action === "scale"
-              ? cursors[hit.handle]
+              ? transformResizeCursor(e.transform.points, hit.handle)
               : hit.action === "distort"
                 ? "crosshair"
                 : "move";
@@ -557,14 +547,20 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     gesture.current = null;
     if (!g) return;
     if (g.kind === "move-pending" || (g.kind === "transform" && g.selectOnClick)) {
+      if (g.kind === "transform" && g.outsideFrame) {
+        e.clearCanvasSelection();
+        return;
+      }
       if (doc) {
         const id = hitIsland({ ...doc, islands: e.visibleIslands }, g.start);
         const p = g.start;
         const imageHit = !doc.islands.length && e.layer?.visible && p.x >= 0 && p.y >= 0 && p.x < doc.width && p.y < doc.height
           && context(e.layer.canvas).getImageData(Math.floor(p.x), Math.floor(p.y), 1, 1).data[3] > 0;
-        e.selectCanvasIsland(id, g.addIsland);
-        if (id >= 0 || imageHit) e.beginTransform();
-        else if (e.doc?.selection) e.deselect();
+        if (id >= 0) {
+          e.selectCanvasIsland(id, g.addIsland);
+          e.beginTransform();
+        } else if (imageHit) e.beginTransform();
+        else e.clearCanvasSelection();
       }
       return;
     }
@@ -583,12 +579,6 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
   }
   return (
     <section className="texture-pane">
-      <div className="pane-heading texture-view-toolbar">
-        <div className="spacer" />
-        <Button title={expanded ? "Restore split view" : "Expand texture editor"} aria-pressed={expanded} onClick={onToggleExpand}>
-          {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-        </Button>
-      </div>
       <div
         className={`canvas-host cursor-${space ? "pan" : e.pickingLayerIsland ? "eyedropper" : e.tool}`}
         ref={host}
@@ -598,16 +588,21 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
           const files = [...ev.dataTransfer.files];
           void e.run(async () => {
             for (const file of files) {
+              if (file.name.toLowerCase().endsWith(".glb")) {
+                await e.importModelFile(file);
+                continue;
+              }
               const bytes = new Uint8Array(await file.arrayBuffer());
-              if (file.name.toLowerCase().endsWith(".glb"))
-                await e.importModel(bytes, file.name);
-              else if (file.name.toLowerCase().endsWith(".uvpaint"))
+              if (file.name.toLowerCase().endsWith(".uvpaint"))
                 await e.importProject(bytes, file.name);
               else await e.requestImageImport(bytes, file.name);
             }
           });
         }}
       >
+        <Button className="texture-expand" title={expanded ? "Restore split view" : "Expand texture editor"} aria-pressed={expanded} onClick={onToggleExpand}>
+          {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </Button>
         <canvas
           ref={view}
           data-testid="texture-canvas"

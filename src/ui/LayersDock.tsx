@@ -29,7 +29,7 @@ export function LayersDock() {
   return <>
     {preview && <div className="layers-dock-preview" data-dock={preview} aria-hidden="true" />}
     <div ref={panel} className={`inspector layers-sidebar${preview ? " docking" : ""}`} data-dock={dock}>
-      <LayersPanel headingProps={{
+      <LayersPanel dockHandleProps={{
         tabIndex: 0,
         "aria-label": "Layers panel docking",
         title: "Drag to dock in a corner · Arrow keys change corner · Escape cancels",

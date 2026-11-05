@@ -1,13 +1,18 @@
 import { canvas, context } from "../core/canvas";
-export async function pickFile(kind: "model" | "image" | "project") {
-  if (window.desktop) return window.desktop.openFile(kind);
-  return new Promise<{ name: string; bytes: Uint8Array; handle?: string } | null>((resolve) => {
+export async function pickFile(kind: "model" | "image" | "project", onReading?: (name: string) => void) {
+  if (window.desktop) {
+    const unsubscribe = kind === "model" && onReading ? window.desktop.onModelFileReading(onReading) : undefined;
+    try { return await window.desktop.openFile(kind); }
+    finally { unsubscribe?.(); }
+  }
+  return new Promise<{ name: string; bytes: Uint8Array; handle?: string; sourcePath?: string } | null>((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept =
       kind === "model" ? ".glb" : kind === "project" ? ".uvpaint" : "image/png,image/jpeg,image/webp,image/bmp";
     input.onchange = async () => {
       const file = input.files?.[0];
+      if (file) onReading?.(file.name);
       resolve(
         file
           ? { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }

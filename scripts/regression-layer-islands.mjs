@@ -68,9 +68,19 @@ try {
     ok(!e.layer.uvBinding && pixel(e.output,16)[3] === 255 && pixel(e.output,48)[3] === 255,
       "Unlinking restores the unmasked source when global clipping is off");
     e.undo();
-    e.selectLayer(second);e.mergeDown();
-    ok(!e.layer.uvBinding && !e.layer.uvMask, "Merge down flattens both visible masks without keeping a stale binding");
-    e.undo();ok(e.layer.uvBinding.island.id === 0, "Undo merge restores the per-layer binding");
+    const lowerBeforeMerge = { ...e.layer };
+    e.selectLayer(second);const upperBeforeMerge = { ...e.layer };e.mergeDown();
+    ok(e.layer.id === first && e.layer.name === lowerBeforeMerge.name && e.layer.name !== upperBeforeMerge.name,
+      "Merge down retains the lower layer's identity and name");
+    ok(e.layer.uvBinding === lowerBeforeMerge.uvBinding && e.layer.uvMask === lowerBeforeMerge.uvMask && e.layer.uvBinding.island.id === 1,
+      "Merge down retains the lower layer's UV set, island binding and mask");
+    ok(pixel(e.output,16)[3] === 0 && pixel(e.output,48)[3] === 255 && pixel(e.layer.canvas,16)[3] === 255,
+      "Merged output follows the lower island while source pixels outside it remain available");
+    e.undo();ok(e.layer.id === second && e.layer.uvBinding.island.id === 0 && e.layer.name === upperBeforeMerge.name && e.doc.layers[0].canvas === lowerBeforeMerge.canvas,
+      "Undo merge restores both original layers, names, pixels and bindings");
+    e.redo();ok(e.layer.name === lowerBeforeMerge.name && e.layer.uvBinding === lowerBeforeMerge.uvBinding,
+      "Redo merge retains the lower layer's name and binding");
+    e.undo();
     await e.newCanvas(128,128);
     ok(e.layer.uvMask.width === 128 && e.layer.uvBinding.island.id === 0, "Resize preserves and scales the bound mask");
     await e.importImage(new Uint8Array(await (await toPNG(e.layer.canvas)).arrayBuffer()), "linked-image.png");

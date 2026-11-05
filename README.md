@@ -31,13 +31,19 @@ The first packaging run downloads Electron. Builds produce no installers or ZIP 
 
 Copy, cut and extract use the selection independently of UV clipping, including pixels hidden outside islands. Pasted pixels remain intact and can be moved onto an island later. Transform drags reuse render buffers and coalesce pointer events per frame. Only the 3D preview temporarily uses a texture up to 512 pixels while dragging; releasing the mouse restores full resolution. Layer pixels, the 2D texture and PNG exports always keep their native dimensions.
 
-Layers support names, visibility, opacity, duplication, reordering, merge down and six blend modes. Merge down is in the Layers header and is disabled for the bottom layer. Merging flattens the pair against transparency, so backdrop-dependent blends can change.
+Layers support names, visibility, opacity, duplication, reordering, merge down and six blend modes. Merge down is in the Layers bottom toolbar and is disabled for the bottom layer. Merging flattens the pair against transparency, so backdrop-dependent blends can change.
 
 Selecting a layer linked to a UV island isolates its pixels and UV outlines in the 2D view only. The 3D model stays visible, and manual hiding is preserved. Selecting an unbound layer removes the automatic 2D isolation. The binding's face links remain valid even when another UV map is displayed. This view state does not change pixels, exports or undo history. Show all in the context menu clears both manual hiding and automatic 2D isolation until another layer is selected.
 
+Clicking blank canvas clears selection, closes the transform frame and removes temporary layer focus, while preserving the layer's UV binding and manual hiding. Opening or confirming an untouched transform does not modify pixels, transparency masks or history. Actual transforms retain the layer's existing mask; temporary island selection never becomes a mask for the whole texture.
+
+A click outside an active transform frame clears it even over another island or opaque image pixels; dragging outside still rotates. With no frame active, clicking a linked island selects its layer and isolates that island only in 2D, including when the layer was already active. The 3D model's visibility is unchanged.
+
+While islands are hidden, the 2D preview clips the image and placement preview to the union of visible UV faces, including during rotation. Texture padding and fragments outside those faces stay hidden. Show all removes this display mask; source pixels and PNG export are unaffected by hiding.
+
 The import picker always displays the complete model, including manually hidden islands and objects, without changing the main viewport. Import selections have resize/move handles; polygon vertices can be moved before or after closing the polygon, and freehand lasso marks its starting point. Press Ctrl after starting a corner scale drag to snap the resulting size in 10-pixel steps while retaining proportions; Ctrl held before grabbing a corner still distorts. Side handles support Ctrl snapping directly.
 
-Layers default to the top-right corner; saved docking positions are retained. Drag the header to any corner. Zoom controls stay bottom-left, moving to bottom-right when Layers occupy bottom-left.
+Layers default to the top-right corner; saved docking positions are retained. Drag the thin strip at the top of the panel to any corner. Zoom controls stay bottom-left, moving to bottom-right when Layers occupy bottom-left.
 
 ## Controls
 
@@ -82,7 +88,7 @@ A normal click on a model face selects its material, UV island and linked layer.
 
 In the 2D Move tool (V), a click selects the island and its linked layer; dragging still transforms the image. Hiding islands hides their image in the 2D view as well as their geometry in 3D. This display mask leaves layer pixels, PNG exports and history untouched; Show all restores the image. Shared pixels remain visible while any overlapping UV face is still visible. Layer thumbnails fill the preview area with a centered crop.
 
-The UV map selector is beside the material selector. UV map aliases and global clipping are in Settings. There is no separate UV Guides panel. A layer binding retains its original UV channel when another map is displayed. Duplicate and extracted layers retain the binding; pasted and imported images inherit the active layer's binding. New empty layers start unlinked. Merge down flattens both visible layer masks and clears the binding on the merged layer.
+The UV map selector is beside the material selector. UV map aliases and global clipping are in Settings. There is no separate UV Guides panel. A layer binding retains its original UV channel when another map is displayed. Duplicate and extracted layers retain the binding; pasted and imported images inherit the active layer's binding. New empty layers start unlinked. Merge down keeps the lower layer's name, UV island binding and editable mask. The upper layer is composited with its own mask, and the result is displayed through the lower layer's mask. Undo restores both original layers.
 
 The view cube follows the camera. Click a face for one of six orthographic views, use Persp/Ortho to change projection, or Iso to return to an isometric perspective. These controls share navigation with Numpad and preserve the orbit center and viewing scale.
 
@@ -90,7 +96,7 @@ The window starts maximized, with a compact draggable header and native window c
 
 UV names may be absent from GLB; labels then show channel numbers and texture roles. Aliases are saved in projects. The original material transparency remains preserved on import. Primary and secondary color swatches appear below the tools; click to edit either color, X to swap, D to reset black/white. Hovering a 3D island highlights its faces without changing the selection or pixels. Hidden islands have no geometry, hover highlight or outlines in either viewport or in the import picker.
 
-Studio lighting and edge overlays help inspect shape. Edges starts enabled in 3D; opening a saved project restores its own view state. Texture / Unlit shows texture color. The viewport previews the active image; it does not reconstruct a Blender node graph or combine all PBR textures into a complete material.
+Studio lighting and edge overlays help inspect shape. Program settings provide saved exposure, main light, fill light and environment light controls, with defaults of 80%, 135%, 45% and 55%, respectively, and a reset button. 3D always uses studio lighting; exported pixels are unchanged. Edges starts enabled in 3D; opening a saved project restores its own view state. The viewport previews the active image; it does not reconstruct a Blender node graph or combine all PBR textures into a complete material.
 
 ## Scope
 
@@ -127,3 +133,11 @@ npm run test:packaged    # After npm run dist
 ```
 
 Browser tests generate their own fixtures and write disposable screenshots/results to `test-results/`. Packaged smoke testing verifies offline startup, the sample model, native PNG export and project save/open. No personal model files are required.
+
+Brush, eraser and clone stamp reuse stroke buffers and update only the changed pixel region. Preview updates are batched per animation frame; the 3D texture preview temporarily uses 512px during a stroke and returns to full resolution when it finishes. Document pixels and undo remain full resolution.
+
+The application menu's Recent submenu remembers the ten most recently opened or saved projects across restarts, without duplicate paths. Entries show their file paths and open directly. Missing or invalid files report an error without replacing the current workspace.
+
+Opening or dropping a GLB displays its file name and current loading phase, including material/object counts during preparation. Editing is blocked until the model and preview are ready. Canceling file selection or encountering an import error clears the indicator and preserves the existing workspace.
+
+Reload GLB rereads the original source file while preserving painted layer pixels, properties, active document/layer, view settings, camera and undo history. Compatible geometry and UV changes refresh island bindings and masks. The source path is stored in the project; older projects can locate it once. Missing, invalid or incompatible replacements leave the current workspace unchanged. Mesh topology or linked-island membership changes that cannot be matched safely are rejected instead of discarding edits.

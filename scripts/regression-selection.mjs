@@ -29,7 +29,7 @@ try {
     return { bounds: e.doc.selection && alphaBounds(e.doc.selection), mask: e.doc.selection?.toDataURL(), history: e.history.undoStack.length, pixels: e.layer.canvas.toDataURL() === window.originalPixels };
   });
   await drag([32, 32], [96, 80]);
-  const original = await state(); check(original.bounds.width === 64 && original.bounds.height === 48, 'Rectangle creates a selection with editable bounds');
+  const original = await state(); check(original.bounds.width === 64 && original.bounds.height === 48, `Rectangle creates a selection with editable bounds: ${JSON.stringify(original.bounds)}`);
   await drag([96, 80], [112, 96]);
   const resized = await state(); check(resized.bounds.width === 80 && resized.bounds.height === 64 && resized.pixels && resized.history === original.history + 1, 'Corner handle resizes only the area and records one undo step');
   await page.keyboard.press('Control+z'); check((await state()).mask === original.mask, 'Undo restores the selection before resizing');
@@ -52,6 +52,10 @@ try {
     }), `${tool} handles resize the original irregular mask without filling its transparent corners`);
   }
   await mkdir('test-results', { recursive: true }); await page.screenshot({ path: 'test-results/selection-handles.png' });
+  await page.evaluate(()=>{window.areaSelection=e.doc.selection;e.setTool('move');window.areaTransform=e.transform;window.areaHistory=e.history.undoStack.length;});
+  const insideArea=await coords(64,64);await page.mouse.click(insideArea.x,insideArea.y);
+  check(await page.evaluate(()=>e.doc.selection===window.areaSelection&&e.transform===window.areaTransform&&e.history.undoStack.length===window.areaHistory),'Clicking an image in Transform preserves an existing area selection and frame');
+  await page.keyboard.press('Escape');
   await page.evaluate(() => {
     e.deselect(); e.doc.islands = [0, 1].map(id => ({ id, triangles: [
       [{ x: id * .5, y: 0 }, { x: (id + 1) * .5, y: 0 }, { x: id * .5, y: .5 }],
@@ -69,6 +73,18 @@ try {
   await click(64,64);
   await click(192, 64, true);
   check(await page.evaluate(() => e.layer.id === window.rightLayer && e.doc.selectedIslands.length === 2), 'Shift-click keeps multiple islands selected while choosing the linked layer');
+  for(const kind of ['free','perspective','mesh']) {
+    await page.evaluate(async kind=>{
+      e.selectLayer(window.leftLayer);
+      const {polygonMask}=await import('/src/tools/selection.ts');
+      e.setSelection(polygonMask(256,256,[{x:32,y:32},{x:96,y:32},{x:96,y:96},{x:32,y:96}]));
+      e.beginTransform(kind);window.beforeOutsideClick=e.history.undoStack.length;
+    },kind);
+    await click(192,64);
+    check(await page.evaluate(()=>!e.transform&&!e.doc.selectedIslands.length&&!e.doc.selection&&e.layer.id===window.leftLayer&&e.history.undoStack.length===window.beforeOutsideClick),`${kind}: click outside the frame clears selection even over another island and opaque pixels`);
+    await click(192,64);
+    check(await page.evaluate(()=>e.layer.id===window.rightLayer&&e.doc.selectedIslands[0]===1),`${kind}: next click selects that island's linked layer`);
+  }
   await page.evaluate(() => { e.selectLayer(window.leftLayer); e.doc.selectedIslands = []; });
   await drag([64, 64], [74, 64]);
   check(await page.evaluate(() => !!e.transform && Math.abs(e.transform.points[0].x - 10) < .1), 'Dragging with Move still translates the image after the click threshold');
@@ -107,12 +123,33 @@ try {
   check((await displayedPixel())[0] > 200 && await page.evaluate(() => e.layer.canvas.toDataURL() === window.beforeHidePixels), 'Show all restores the displayed image with identical layer pixels');
   await page.evaluate(async () => {
     await e.newCanvas(512, 128);
+    e.doc.restrict=false;e.setLayerIsland(null);
     const ctx = e.layer.canvas.getContext('2d'); ctx.fillStyle = '#00ff00'; ctx.fillRect(0, 0, 512, 128);
     ctx.fillStyle = '#0000ff'; ctx.fillRect(128, 0, 256, 128); e.emit(true);
   });
   check(await page.locator('.layer-row.selected .layer-thumb').evaluate(c => {
-    const ctx = c.getContext('2d'); return [ctx.getImageData(0, 0, 1, 1), ctx.getImageData(43, 35, 1, 1)].every(p => p.data[2] === 255 && p.data[3] === 255);
-  }), 'Layer thumbnail fills its full preview by cropping the image around its center');
+    const ctx = c.getContext('2d'), pixel=(x,y)=>ctx.getImageData(x,y,1,1).data;
+    return pixel(0,18)[1]===255 && pixel(43,18)[1]===255 && pixel(22,18)[2]===255 && pixel(22,5)[3]===0 && pixel(22,30)[3]===0;
+  }), 'Wide layer thumbnail preserves proportions and both edges with transparent space above and below');
+  await page.evaluate(() => {
+    const ctx=e.layer.canvas.getContext('2d');ctx.clearRect(0,0,512,128);
+    ctx.fillStyle='#ff0000';ctx.fillRect(10,10,44,36);
+    ctx.fillStyle='#00ff00';ctx.fillRect(70,10,44,36);
+    e.doc.islands=[10,70].map((x,id)=>({id,triangles:[
+      [{x:x/512,y:10/128},{x:(x+44)/512,y:10/128},{x:(x+44)/512,y:46/128}],
+      [{x:x/512,y:10/128},{x:(x+44)/512,y:46/128},{x:x/512,y:46/128}]
+    ]}));e.setLayerIsland(0);e.emit(true);window.thumbnailSource=e.layer.canvas.toDataURL();
+  });
+  const thumbColor = channel => page.locator('.layer-row.selected .layer-thumb').evaluate((c,channel) => {
+    const ctx=c.getContext('2d');return [[1,1],[42,1],[1,34],[42,34],[22,18]].every(([x,y])=>{
+      const p=ctx.getImageData(x,y,1,1).data;return p[channel]===255&&p[3]===255;
+    });
+  },channel);
+  check(await thumbColor(0),'Small off-center bound island fills the entire layer thumbnail');
+  await page.evaluate(()=>e.setLayerIsland(1));
+  check(await thumbColor(1),'Rebinding refreshes the thumbnail without changing source pixels');
+  await page.evaluate(()=>e.undo());
+  check(await thumbColor(0)&&await page.evaluate(()=>e.layer.canvas.toDataURL()===window.thumbnailSource),'Undo restores thumbnail framing and preserves the full layer source');
   await page.evaluate(async () => {
     const { Editor } = await import('/src/core/editor.ts'); const saved = localStorage.getItem('uvpaint.preferences'); localStorage.removeItem('uvpaint.preferences');
     const fresh = new Editor(); window.defaults = [fresh.uvDisplay, fresh.previewEdges, fresh.textScale];

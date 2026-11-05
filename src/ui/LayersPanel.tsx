@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { HTMLAttributes } from "react";
 import {
-  Layers,
   Eye,
   EyeOff,
   Plus,
@@ -18,38 +17,48 @@ import { useEditor } from "./hooks";
 import { Button } from "./Button";
 function Thumbnail({ layer, refresh }: { layer: Layer; refresh: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const crop = useMemo(() => {
+    const w = layer.canvas.width, h = layer.canvas.height;
+    let left = 1, top = 1, right = 0, bottom = 0;
+    for (const triangle of layer.uvBinding?.island.triangles ?? []) {
+      for (const p of triangle) {
+        left = Math.min(left, p.x); top = Math.min(top, p.y);
+        right = Math.max(right, p.x); bottom = Math.max(bottom, p.y);
+      }
+    }
+    left = Math.max(0, left); top = Math.max(0, top);
+    right = Math.min(1, right); bottom = Math.min(1, bottom);
+    return right > left && bottom > top
+      ? { x: left * w, y: top * h, width: (right - left) * w, height: (bottom - top) * h }
+      : { x: 0, y: 0, width: w, height: h };
+  }, [layer.uvBinding, layer.canvas.width, layer.canvas.height]);
   useEffect(() => {
     const c = ref.current!,
       x = c.getContext("2d")!;
     x.clearRect(0, 0, 44, 36);
-    const s = Math.max(44 / layer.canvas.width, 36 / layer.canvas.height);
-    x.drawImage(
-      layer.canvas,
-      (44 - layer.canvas.width * s) / 2,
-      (36 - layer.canvas.height * s) / 2,
-      layer.canvas.width * s,
-      layer.canvas.height * s,
-    );
-  }, [layer.canvas, refresh]);
+    const s = Math.min(44 / crop.width, 36 / crop.height);
+    const draw = (image: HTMLCanvasElement) => x.drawImage(image,
+      crop.x, crop.y, crop.width, crop.height,
+      (44 - crop.width * s) / 2, (36 - crop.height * s) / 2,
+      crop.width * s, crop.height * s);
+    draw(layer.canvas);
+    if (layer.uvMask) {
+      x.save();
+      x.globalCompositeOperation = "destination-in";
+      draw(layer.uvMask);
+      x.restore();
+    }
+  }, [layer.canvas, layer.uvMask, crop, refresh]);
   return <canvas className="layer-thumb" ref={ref} width="44" height="36" />;
 }
-export function LayersPanel({ headingProps }: { headingProps?: HTMLAttributes<HTMLDivElement> }) {
+export function LayersPanel({ dockHandleProps }: { dockHandleProps?: HTMLAttributes<HTMLDivElement> }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const e = useEditor(),
     d = e.doc,
     l = e.layer;
   return (
     <div className="layers-panel">
-      <div {...headingProps} className="section-heading layers-drag-heading">
-        <span>
-          <Layers size={14} /> LAYERS <b>{d?.layers.length ?? 0}</b>
-        </span>
-        <div className="mini-actions">
-          <Button title="Merge down" disabled={!l || d?.layers[0] === l} onClick={() => e.mergeDown()}>
-            <ArrowDownToLine size={15} />
-          </Button>
-        </div>
-      </div>
+      <div {...dockHandleProps} className="layers-drag-handle" />
       <div className="layer-properties">
         <select
           aria-label="Layer blend mode"
@@ -181,6 +190,9 @@ export function LayersPanel({ headingProps }: { headingProps?: HTMLAttributes<HT
           onClick={() => e.reorder(-1)}
         >
           <ArrowDown size={14} />
+        </Button>
+        <Button title="Merge down" disabled={!l || d?.layers[0] === l} onClick={() => e.mergeDown()}>
+          <ArrowDownToLine size={15} />
         </Button>
         <div className="spacer" />
         <Button

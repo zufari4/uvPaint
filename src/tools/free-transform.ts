@@ -10,6 +10,40 @@ export const midpoint = (a: Point, b: Point): Point => ({
 export function transformHandles(points: Point[]) {
   return [...points, ...points.map((p, i) => midpoint(p, points[(i + 1) % 4]))];
 }
+export function transformResizeCursor(points: Point[], handle: number): string {
+  let dx: number, dy: number;
+  if (handle < 4) {
+    // Use the corner bisector so wide rectangles still have diagonal cursors.
+    const p = points[handle];
+    const directions = [(handle + 1) % 4, (handle + 3) % 4].map(i => {
+      const x = p.x - points[i].x, y = p.y - points[i].y;
+      const length = Math.hypot(x, y) || 1;
+      return { x: x / length, y: y / length };
+    });
+    dx = directions[0].x + directions[1].x;
+    dy = directions[0].y + directions[1].y;
+  } else {
+    const handles = transformHandles(points);
+    const opposite = handles[4 + ((handle - 4 + 2) % 4)];
+    dx = handles[handle].x - opposite.x;
+    dy = handles[handle].y - opposite.y;
+  }
+  const direction = ((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 4) + 4) % 4;
+  return ["ew-resize", "nwse-resize", "ns-resize", "nesw-resize"][direction];
+}
+export function insideTransform(points: Point[], p: Point): boolean {
+  const outline = points.length === 16
+    ? [0,1,2,3,7,11,15,14,13,12,8,4].map(i => points[i]) : points;
+  let inside = false;
+  for (let i = 0; i < outline.length; i++) {
+    const a = outline[i], b = outline[(i + 1) % outline.length];
+    const cross = (b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x);
+    if (Math.abs(cross) < 1e-8 && p.x >= Math.min(a.x,b.x) && p.x <= Math.max(a.x,b.x)
+      && p.y >= Math.min(a.y,b.y) && p.y <= Math.max(a.y,b.y)) return true;
+    if ((a.y > p.y) !== (b.y > p.y) && p.x < a.x + (p.y-a.y)*(b.x-a.x)/(b.y-a.y)) inside = !inside;
+  }
+  return inside;
+}
 export function hitTransform(
   points: Point[],
   p: Point,
@@ -24,12 +58,7 @@ export function hitTransform(
   if (handle >= 0)
     return { action: free && (!ctrl || handle >= 4) ? "scale" : "distort", handle };
   if (free) {
-    const crosses = points.map((a, i) => {
-      const b = points[(i + 1) % points.length];
-      return (b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x);
-    });
-    const inside = crosses.every(v => v >= -1e-8) || crosses.every(v => v <= 1e-8);
-    if (!inside)
+    if (!insideTransform(points, p))
       return { action: "rotate", handle: -1 };
   }
   return { action: "move", handle: -1 };

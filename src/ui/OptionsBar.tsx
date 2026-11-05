@@ -59,7 +59,7 @@ export function OptionsBar() {
           Clear selection
         </Button>
       )}
-      {!selection && (e.doc?.restrict || e.layer?.uvBinding || (e.tool === "fill" && !!e.doc?.islands.length)) && (
+      {!selection && (e.layer?.uvBinding || (e.tool !== "move" && (e.doc?.restrict || (e.tool === "fill" && !!e.doc?.islands.length)))) && (
         <span className="options-hint">
           {e.tool === "fill" && e.doc?.islands.length ? "Fill: island under cursor" : `UV clipping: ${e.layer?.uvBinding ? `Island ${String(e.layer.uvBinding.island.id + 1).padStart(2, "0")}` : `${e.doc?.selectedIslands.length || "all"} islands`}`}
         </span>
