@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointer } from "react";
-import { ImagePlus, Maximize, Minimize2, Maximize2, Minus, Plus } from "lucide-react";
+import { ImagePlus, Layers, Maximize, Minimize2, Maximize2, Minus, Plus } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
 import type { Point, SelectionMode, ShapeKind } from "../types";
@@ -979,6 +979,11 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
           <Button title="Fit canvas" onClick={fit}>
             <Maximize size={13} />
           </Button>
+          {e.textureIsolated && !e.transform && (
+            <Button title="Show all layers (Esc)" onClick={() => e.releaseFocus()}>
+              <Layers size={13} />
+            </Button>
+          )}
         </div>
       </div>
       </div>

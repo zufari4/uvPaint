@@ -117,8 +117,8 @@ try {
   await page.keyboard.press('Escape');
   check(await page.evaluate(()=>!e.textureIsolated),'Escape with nothing to cancel shows all layers');
   await page.evaluate(()=>{e.deselect();e.setLayerIsland(1);});
-  await page.getByRole('button',{name:'Show all layers (Esc)'}).click();
-  check(await page.evaluate(()=>!e.textureIsolated),'The options bar button shows all layers');
+  await page.locator('.canvas-zoom').getByRole('button',{name:'Show all layers (Esc)'}).click();
+  check(await page.evaluate(()=>!e.textureIsolated),'The icon next to the zoom controls shows all layers');
 
   // Collapsible Layers panel.
   await page.getByTitle('Collapse layers panel',{exact:true}).click();

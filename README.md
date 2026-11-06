@@ -90,7 +90,7 @@ Shortcuts use physical keys, so they also work with a Russian keyboard layout.
 
 ## 🧭 Workflow tips
 
-- 🎯 **Click an island** with the Move tool to select it, its linked layer (the Layers panel scrolls to it) and open the transform frame. A click on empty space with the Move or UV island tool, **Esc** or **Show all layers** in the options bar shows everything again; painting and selecting beyond the island keep the focus.
+- 🎯 **Click an island** with the Move tool to select it, its linked layer (the Layers panel scrolls to it) and open the transform frame. A click on empty space with the Move or UV island tool, **Esc** or the **Show all layers** icon next to the zoom controls shows everything again; painting and selecting beyond the island keep the focus.
 - 🔗 **Link a layer** to an island with the picker button in the Layers toolbar; the island number appears in the layer row.
 - 🫥 **Hide or isolate islands** from the right-click menu — this only changes the view, never the pixels.
 - 🪣 **Fill** on a UV-mapped texture fills the whole island under the cursor.
