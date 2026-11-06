@@ -91,7 +91,7 @@ export class Editor {
   /** Offset from the clone source to the paint point, kept between strokes (aligned clone). */
   cloneOffset: Point | null = null;
   /** A placed but not yet applied line whose end points can still be dragged. */
-  lineEdit: { stroke: PaintStroke; a: Point; b: Point; placed: boolean } | null = null;
+  lineEdit: { stroke: PaintStroke; a: Point; b: Point; placed: boolean; angle: number } | null = null;
   private compositor = new LayerCompositor();
   private warmTimer = 0;
   message = "Open a GLB to start, or create a texture.";
@@ -284,7 +284,7 @@ export class Editor {
       const style = JSON.stringify([this.color, this.backgroundColor, this.colorAlpha, this.backgroundAlpha, this.brushSize, this.shape, this.gradient]);
       if (style !== this.lineStyle) {
         this.lineStyle = style;
-        this.lineEdit.stroke.moveLine(this.lineEdit.a, this.lineEdit.b);
+        this.lineEdit.stroke.moveLine(this.lineEdit.a, this.lineEdit.b, this.lineEdit.angle);
       }
     }
     if (pixels && this.doc) {

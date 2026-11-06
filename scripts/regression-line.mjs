@@ -68,6 +68,27 @@ try {
   await page.getByLabel('Shape fill').uncheck();
   await page.getByLabel('Outline width').fill('2');
   console.log('PASS Shape options update the shape being edited');
+  await page.evaluate(()=>window.__e.addEmpty());
+  b=await page.getByTestId('texture-canvas').boundingBox();
+  await page.mouse.move(...screen(20,20));await page.mouse.down();
+  await page.mouse.move(...screen(60,50),{steps:4});await page.mouse.up();
+  await page.keyboard.down('Shift');
+  await page.mouse.move(...screen(40,35));await page.mouse.down();
+  await page.mouse.move(...screen(50,38),{steps:4});await page.mouse.up();
+  await page.keyboard.up('Shift');
+  assert.deepEqual(await page.evaluate(()=>{const l=window.__e.lineEdit;return [Math.round(l.a.x),Math.round(l.a.y),Math.round(l.b.x),Math.round(l.b.y)];}),[30,20,70,50],
+    'dragging inside moves the whole shape; Shift keeps the dominant axis');
+  const ring=12/zoom;
+  await page.keyboard.down('Shift');
+  await page.mouse.move(...screen(70+ring,35));await page.mouse.down();
+  await page.mouse.move(...screen(51,35+20+ring),{steps:6});await page.mouse.up();
+  await page.keyboard.up('Shift');
+  assert.ok(Math.abs(await page.evaluate(()=>window.__e.lineEdit.angle)-Math.PI/2)<1e-6,'dragging just outside rotates the shape; Shift snaps to 15\u00b0');
+  await page.keyboard.press('Enter');
+  const turned=await alpha([[35,35],[25,35],[50,15],[50,55]]);
+  assert.ok(turned[0][3]>100&&turned[2][3]>100&&turned[3][3]>100,'the rotated rectangle is drawn standing upright');
+  assert.equal(turned[1][3],0,'nothing remains at the old left edge');
+  console.log('PASS Editable shapes can be moved and rotated with snapping');
   await pickShape('Ellipse');
   await page.evaluate(()=>{const e=window.__e;e.addEmpty();e.color='#0000ff';e.backgroundColor='#ff0000';e.emit();});
   await page.getByLabel('Shape fill').check();

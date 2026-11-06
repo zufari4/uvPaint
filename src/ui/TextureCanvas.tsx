@@ -10,6 +10,7 @@ import { selectionBounds, selectionHandles, selectionCursors, hitSelectionHandle
 import { traceIslands, hitIsland } from "../tools/uv";
 import { traceGuides } from "../tools/uv-guides";
 import { PaintStroke } from "../tools/paint";
+import { hitShape, rotateAround, shapeFrame, shapePivot } from "../tools/shape-geometry";
 import { TextureVisibility } from "../render/texture-visibility";
 import { LayersDock } from "./LayersDock";
 import {
@@ -26,6 +27,8 @@ type Gesture = {
   kind: "pan" | "select" | "paint" | "transform" | "move-pending" | "selection-frame" | "line";
   lineHandle?: "a" | "b";
   fresh?: boolean;
+  /** Whole-shape drag: the points and rotation when the drag started. */
+  shapeDrag?: { mode: "move" | "rotate"; a: Point; b: Point; angle: number };
   start: Point;
   last: Point;
   points: Point[];
@@ -50,12 +53,20 @@ const snapAngle = (from: Point, to: Point, step = Math.PI / 4) => {
   return { x: from.x + Math.cos(angle) * length, y: from.y + Math.sin(angle) * length };
 };
 /** Shift: lines snap to 45°, rectangles and ellipses become squares and circles, polygons rotate in 15° steps. */
-const constrainShape = (kind: ShapeKind, from: Point, to: Point): Point => {
+const constrainShape = (kind: ShapeKind, from: Point, to: Point, angle = 0): Point => {
   if (kind === "line") return snapAngle(from, to);
   if (kind === "polygon") return snapAngle(from, to, Math.PI / 12);
-  const side = Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y));
-  return { x: from.x + Math.sign(to.x - from.x || 1) * side, y: from.y + Math.sign(to.y - from.y || 1) * side };
+  // Squares and circles are measured along the rotated frame.
+  const local = rotateAround(to, from, -angle);
+  const side = Math.max(Math.abs(local.x - from.x), Math.abs(local.y - from.y));
+  return rotateAround({ x: from.x + Math.sign(local.x - from.x || 1) * side, y: from.y + Math.sign(local.y - from.y || 1) * side }, from, angle);
 };
+const snapGrid = (p: Point, step = 10) => ({ x: Math.round(p.x / step) * step, y: Math.round(p.y / step) * step });
+const rotateCursor = `url("data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">' +
+  '<g stroke="#000" stroke-width="4"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></g>' +
+  '<g stroke="#fff" stroke-width="2"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></g></svg>',
+)}") 12 12, crosshair`;
 export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean; onToggleExpand: () => void }) {
   const e = useEditor(),
     doc = e.doc;
@@ -500,6 +511,15 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
       }
+      if (placed && e.tool === "line" && e.shape.kind === "ellipse") {
+        ctx.save();
+        ctx.setLineDash([4 / zoom, 4 / zoom]);
+        ctx.beginPath();
+        for (const q of shapeFrame(a, b, e.lineEdit.angle).corners) ctx.lineTo(q.x, q.y);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      }
       for (const q of placed ? [a, b] : [a]) {
         ctx.fillRect(q.x - 5 / zoom, q.y - 5 / zoom, 10 / zoom, 10 / zoom);
         ctx.strokeRect(q.x - 5 / zoom, q.y - 5 / zoom, 10 / zoom, 10 / zoom);
@@ -509,6 +529,12 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     ctx.strokeStyle = "#ffffff1a";
     ctx.strokeRect(origin.x - 0.5, origin.y - 0.5, w * zoom + 1, h * zoom + 1);
   }, [e.revision, size, zoom, pan, path, selectionPreview]);
+  /** Body (move) or surrounding ring (rotate) of the shape that is still being edited. */
+  function hitLineShape(line: NonNullable<typeof e.lineEdit>, p: Point) {
+    const gradient = e.tool === "gradient", kind = gradient ? "line" : e.shape.kind;
+    const width = gradient ? 0 : kind === "line" ? e.brushSize : e.shape.width;
+    return hitShape(kind, line.a, line.b, line.angle, p, Math.max(width / 2, 6 / zoom), 24 / zoom);
+  }
   function down(ev: ReactPointer<HTMLCanvasElement>) {
     if (ev.button === 2) return;
     if (!doc) return;
@@ -610,9 +636,15 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
         const near = (q: Point) => Math.hypot(q.x - p.x, q.y - p.y) * zoom <= 8;
         const handle = line.placed ? (near(line.b) ? "b" : near(line.a) ? "a" : null) : null;
         if (handle) { g.lineHandle = handle; gesture.current = g; return; }
+        const hit = line.placed ? hitLineShape(line, p) : null;
+        if (hit) {
+          g.shapeDrag = { mode: hit === "body" ? "move" : "rotate", a: { ...line.a }, b: { ...line.b }, angle: line.angle };
+          gesture.current = g;
+          return;
+        }
         if (!line.placed) {
           line.b = p; line.placed = true;
-          line.stroke.moveLine(line.a, line.b);
+          line.stroke.moveLine(line.a, line.b, line.angle);
           g.lineHandle = "b"; gesture.current = g;
           return;
         }
@@ -620,7 +652,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       }
       // Gradient end points may lie beyond the texture.
       if (e.tool === "line" && (p.x < 0 || p.y < 0 || p.x >= doc.width || p.y >= doc.height)) return;
-      e.lineEdit = { stroke: new PaintStroke(e, p), a: p, b: p, placed: false };
+      e.lineEdit = { stroke: new PaintStroke(e, p), a: p, b: p, placed: false, angle: 0 };
       g.lineHandle = "b"; g.fresh = true; gesture.current = g;
       e.emit();
       return;
@@ -665,7 +697,9 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       } else if ((e.tool === "line" || e.tool === "gradient") && e.lineEdit) {
         const { a, b, placed } = e.lineEdit;
         const near = (q: Point) => Math.hypot(q.x - p.x, q.y - p.y) * zoom <= 8;
-        ev.currentTarget.style.cursor = placed && (near(a) || near(b)) ? "move" : "";
+        const hit = placed ? hitLineShape(e.lineEdit, p) : null;
+        ev.currentTarget.style.cursor = !placed ? "" : near(a) || near(b) ? "pointer"
+          : hit === "body" ? "move" : hit === "rotate" ? rotateCursor : "";
       } else if (e.transform) {
         const hit = hitTransform(
           e.transform.points,
@@ -698,12 +732,39 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     }
     if (g.kind === "line") {
       const line = e.lineEdit;
+      const ctrl = ev.ctrlKey || ev.metaKey, kind = e.tool === "gradient" ? "line" : e.shape.kind;
+      if (line && g.shapeDrag) {
+        const s = g.shapeDrag;
+        if (s.mode === "move") {
+          // Shift keeps one axis, Ctrl moves in 10-pixel steps, as in free transform.
+          let dx = p.x - g.start.x, dy = p.y - g.start.y;
+          if (ev.shiftKey) { if (Math.abs(dx) >= Math.abs(dy)) dy = 0; else dx = 0; }
+          if (ctrl) { dx = Math.round(dx / 10) * 10; dy = Math.round(dy / 10) * 10; }
+          line.a = { x: s.a.x + dx, y: s.a.y + dy };
+          line.b = { x: s.b.x + dx, y: s.b.y + dy };
+        } else {
+          const c = shapePivot(kind, s.a, s.b);
+          let delta = Math.atan2(p.y - c.y, p.x - c.x) - Math.atan2(g.start.y - c.y, g.start.x - c.x);
+          // Shift snaps the rotation to 15°, Ctrl to 5°.
+          const step = ctrl ? Math.PI / 36 : ev.shiftKey ? Math.PI / 12 : 0;
+          if (step) {
+            const base = kind === "polygon" ? Math.atan2(s.b.y - s.a.y, s.b.x - s.a.x) : s.angle;
+            delta = Math.round((base + delta) / step) * step - base;
+          }
+          line.a = rotateAround(s.a, c, delta);
+          line.b = rotateAround(s.b, c, delta);
+          line.angle = kind === "rect" || kind === "ellipse" ? s.angle + delta : 0;
+        }
+        line.stroke.moveLine(line.a, line.b, line.angle);
+        return;
+      }
       if (!line || (g.fresh && Math.hypot(p.x - g.start.x, p.y - g.start.y) * zoom < 4)) return;
       // Dragging right after the first press draws the line in one gesture.
       if (g.fresh) line.placed = true;
       const handle = g.lineHandle ?? "b";
-      line[handle] = ev.shiftKey ? constrainShape(e.tool === "gradient" ? "line" : e.shape.kind, handle === "a" ? line.b : line.a, p) : p;
-      line.stroke.moveLine(line.a, line.b);
+      const q = ctrl ? snapGrid(p) : p;
+      line[handle] = ev.shiftKey ? constrainShape(kind, handle === "a" ? line.b : line.a, q, line.angle) : q;
+      line.stroke.moveLine(line.a, line.b, line.angle);
       return;
     }
     if (g.kind === "selection-frame") {

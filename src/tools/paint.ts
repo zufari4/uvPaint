@@ -7,6 +7,7 @@ import {
 } from "../core/canvas";
 import { snapshot } from "../core/history";
 import { editingMask } from "./uv";
+import { shapeFrame } from "./shape-geometry";
 const rgba = (hex: string, alpha: number) =>
   `rgba(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(",")},${alpha})`;
 export class PaintStroke {
@@ -25,6 +26,7 @@ export class PaintStroke {
   private ended = false;
   private tool: Editor["tool"];
   private hardness = 1;
+  private angle = 0;
   constructor(
     public editor: Editor,
     p: Point,
@@ -107,10 +109,15 @@ export class PaintStroke {
         ctx.lineTo(p.x, p.y);
         ctx.stroke();
       } else {
-        if (shape.kind === "rect") ctx.rect(box.left, box.top, box.right - box.left, box.bottom - box.top);
-        else if (shape.kind === "ellipse")
-          ctx.ellipse((box.left + box.right) / 2, (box.top + box.bottom) / 2, (box.right - box.left) / 2, (box.bottom - box.top) / 2, 0, 0, Math.PI * 2);
-        else {
+        if (shape.kind === "rect" || shape.kind === "ellipse") {
+          const frame = shapeFrame(from, p, this.angle);
+          if (shape.kind === "rect") {
+            for (const q of frame.corners) ctx.lineTo(q.x, q.y);
+            ctx.closePath();
+          } else ctx.ellipse(frame.center.x, frame.center.y, frame.halfWidth, frame.halfHeight, this.angle, 0, Math.PI * 2);
+          const xs = frame.corners.map(q => q.x), ys = frame.corners.map(q => q.y);
+          box = { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
+        } else {
           // Regular polygon: the first point is the centre, the second one a vertex.
           const r = Math.hypot(p.x - from.x, p.y - from.y), start = Math.atan2(p.y - from.y, p.x - from.x);
           for (let i = 0; i < shape.sides; i++) {
@@ -187,9 +194,10 @@ export class PaintStroke {
     this.last = p;
     if (!this.frame) this.frame = requestAnimationFrame(() => this.flush(true));
   }
-  /** Redraws an editable line between two (possibly moved) end points. */
-  moveLine(a: Point, b: Point) {
+  /** Redraws an editable shape between two (possibly moved) points; `angle` rotates rectangles and ellipses. */
+  moveLine(a: Point, b: Point, angle = 0) {
     this.start = a;
+    this.angle = angle;
     this.draw(b);
   }
   private flush(interactive: boolean) {

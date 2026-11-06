@@ -235,11 +235,11 @@ export function OptionsBar() {
             </>
           )}
           {e.tool === "line" && (
-            <span className="options-hint">{e.shape.kind === "polygon"
-              ? "Drag from the centre to a corner · drag points to adjust · Enter applies · Shift snaps rotation"
+            <span className="options-hint" title="Shift: snap angle or keep one axis · Ctrl: 10 px grid, 5° rotation">{e.shape.kind === "polygon"
+              ? "Drag from the centre to a corner · drag inside to move, just outside to rotate · Enter applies · Shift/Ctrl snap"
               : e.shape.kind === "line"
-                ? "Click two points or drag · drag end points to adjust · Enter applies · Shift snaps to 45°"
-                : `Drag corner to corner · drag points to adjust · Enter applies · Shift draws a ${e.shape.kind === "rect" ? "square" : "circle"}`}</span>
+                ? "Click two points or drag · drag the line to move it · Enter applies · Shift snaps to 45°, Ctrl to the grid"
+                : `Drag corner to corner · drag inside to move, just outside to rotate · Enter applies · Shift draws a ${e.shape.kind === "rect" ? "square" : "circle"}, Ctrl snaps`}</span>
           )}
         </>
       )}
