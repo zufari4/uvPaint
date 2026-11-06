@@ -91,6 +91,13 @@ try {
   });
   results.forEach(label=>console.log("PASS",label));
   await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');await e.sample();e.setTool('brush');});
+  check(await page.evaluate(async()=>{
+    const {editor:e}=await import('/src/core/editor.ts');const {composite}=await import('/src/render/composite.ts');
+    const slot=e.model.slots[1],doc=[...e.docs.values()].find(d=>d.id===slot.id);
+    const read=c=>[...c.getContext('2d').getImageData(0,0,doc.width,doc.height).data];
+    const shown=read(slot.texture.image),expected=read(composite(doc));
+    return slot.id!==e.activeId&&doc.layers.length>1&&shown.every((v,i)=>Math.abs(v-expected[i])<=1);
+  }),'Sample: the inactive material shows all of its layers in 3D without switching to it');
   check(await page.locator(".uv-panel,.island-list").count() === 0, "UV Guides panel is removed");
   check(await page.locator('.layer-island-binding').count()===0 && await page.getByLabel('Layer UV island',{exact:true}).count()===0,'UV binding dropdown row is removed');
   check(await page.locator('.layer-footer').getByTitle('Pick UV island from canvas or model',{exact:true}).locator('svg.lucide-square-mouse-pointer').count()===1,'UV picking uses a region-and-cursor icon in the layer footer');

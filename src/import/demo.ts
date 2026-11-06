@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { canvas, context } from "../core/canvas";
 import { prepareModel } from "./model";
 import { hitIsland, islandMask } from "../tools/uv";
+import { composite } from "../render/composite";
+import { syncMaterial } from "../render/material";
 import type { Blend, Layer, TextureDocument } from "../types";
 
 // Built-in sample: a supply crate and a fuel drum with proper UV layouts, two materials and
@@ -174,5 +176,10 @@ export async function demoModel(check: (w: number, h: number) => Promise<void>) 
     }), side.x + side.w / 2, side.y + side.h / 2),
   );
   result.model.source = { kind: "sample" };
+  // The 3D textures were built from the base layers only; include the added layers.
+  for (const doc of result.docs) {
+    const slot = result.model.slots.find((s) => s.id === doc.id);
+    if (slot) syncMaterial(slot, doc, composite(doc));
+  }
   return result;
 }
