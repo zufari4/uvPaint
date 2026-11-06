@@ -301,7 +301,7 @@ select {
   padding-top: 8px;
   margin-top: 5px;
 }
-.tool-shapes { position: relative; }
+.tool-group { position: relative; }
 .tool-rail button.has-flyout { position: relative; }
 .tool-rail button.has-flyout::after {
   content: "";
@@ -488,6 +488,7 @@ select {
 }
 .cursor-brush,
 .cursor-line,
+.cursor-gradient,
 .cursor-eraser,
 .cursor-clone,
 .cursor-rect,

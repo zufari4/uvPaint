@@ -110,9 +110,14 @@ export function useShortcuts() {
         ev.preventDefault();
         return;
       }
+      if (k === "g") {
+        e.setTool(ev.shiftKey ? (e.fillTool === "fill" ? "gradient" : "fill") : e.fillTool);
+        ev.preventDefault();
+        return;
+      }
       if (
         /^Digit[0-9]$/.test(ev.code) &&
-        ["brush", "line", "fill"].includes(e.tool)
+        ["brush", "line", "fill", "gradient"].includes(e.tool)
       ) {
         e.colorAlpha = (Number(ev.code.slice(-1)) || 10) / 10;
         e.emit();
@@ -127,7 +132,6 @@ export function useShortcuts() {
         b: "brush",
         n: "line",
         e: "eraser",
-        g: "fill",
         i: "eyedropper",
         s: "clone",
         u: "island",

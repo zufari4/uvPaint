@@ -88,6 +88,7 @@ export type Tool =
   | "line"
   | "eraser"
   | "fill"
+  | "gradient"
   | "eyedropper"
   | "clone"
   | "island"

@@ -48,6 +48,7 @@ export function OptionsBar() {
             line: { line: "Line", rect: "Rectangle", ellipse: "Ellipse", polygon: "Polygon" }[e.shape.kind],
             eraser: "Eraser",
             fill: "Fill",
+            gradient: e.gradient === "radial" ? "Radial gradient" : "Linear gradient",
             eyedropper: "Eyedropper",
             clone: "Clone stamp",
             island: "UV islands",
@@ -141,6 +142,26 @@ export function OptionsBar() {
             />{" "}
             Contiguous
           </label>
+        </>
+      )}
+      {e.tool === "gradient" && (
+        <>
+          <div className="selection-modes" role="group" aria-label="Gradient type">
+            {(["linear", "radial"] as const).map(kind => (
+              <Button key={kind} title={kind === "linear" ? "Linear gradient" : "Radial gradient"}
+                active={e.gradient === kind} aria-pressed={e.gradient === kind} onClick={() => e.setGradient(kind)}>
+                {kind === "linear" ? "Linear" : "Radial"}
+              </Button>
+            ))}
+          </div>
+          <ColorButton label="Gradient start color" title="Start color (primary)" color={e.color} alpha={e.colorAlpha}
+            onChange={(color, alpha) => e.setColor("primary", color, alpha)} />
+          <Button title="Swap start and end colors (X)" onClick={() => e.swapColors()}>⇄</Button>
+          <ColorButton label="Gradient end color" title="End color (secondary)" color={e.backgroundColor} alpha={e.backgroundAlpha}
+            onChange={(color, alpha) => e.setColor("secondary", color, alpha)} />
+          <span className="options-hint">{e.gradient === "radial"
+            ? "Drag from the centre outwards"
+            : "Drag from start to end"} · drag points to adjust · Enter applies · Shift snaps to 45°</span>
         </>
       )}
       {["brush", "line", "eraser", "clone", "fill"].includes(e.tool) && (

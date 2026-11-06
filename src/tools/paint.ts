@@ -7,6 +7,8 @@ import {
 } from "../core/canvas";
 import { snapshot } from "../core/history";
 import { editingMask } from "./uv";
+const rgba = (hex: string, alpha: number) =>
+  `rgba(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(",")},${alpha})`;
 export class PaintStroke {
   before: TextureDocument;
   ink: HTMLCanvasElement;
@@ -39,7 +41,7 @@ export class PaintStroke {
       throw new Error(
         "The active layer opacity is 0%. Increase it before painting.",
       );
-    if (editor.brushOpacity === 0 && !(editor.tool === "line" && editor.shape.kind !== "line"))
+    if (editor.brushOpacity === 0 && editor.tool !== "gradient" && !(editor.tool === "line" && editor.shape.kind !== "line"))
       throw new Error("The paint color is fully transparent. Raise its alpha to paint.");
     if (d.restrict && !d.islands.length && !layer.uvBinding)
       throw new Error(
@@ -73,10 +75,23 @@ export class PaintStroke {
     if (this.ended) return;
     const e = this.editor,
       ctx = context(this.ink);
-    // A shape redraws completely from the press point on every move.
-    const from = this.tool === "line" ? this.start : this.last;
+    // Shapes and gradients redraw completely from the press point on every move.
+    const from = this.tool === "line" || this.tool === "gradient" ? this.start : this.last;
     let box = { left: Math.min(from.x, p.x), top: Math.min(from.y, p.y), right: Math.max(from.x, p.x), bottom: Math.max(from.y, p.y) };
-    if (this.tool === "line") {
+    if (this.tool === "gradient") {
+      const { width: w, height: h } = this.ink, r = Math.hypot(p.x - from.x, p.y - from.y);
+      ctx.clearRect(0, 0, w, h);
+      if (r > 0) {
+        const g = e.gradient === "radial"
+          ? ctx.createRadialGradient(from.x, from.y, 0, from.x, from.y, r)
+          : ctx.createLinearGradient(from.x, from.y, p.x, p.y);
+        g.addColorStop(0, rgba(e.color, e.colorAlpha));
+        g.addColorStop(1, rgba(e.backgroundColor, e.backgroundAlpha));
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+      box = { left: 0, top: 0, right: w, bottom: h };
+    } else if (this.tool === "line") {
       const shape = e.shape, width = shape.kind === "line" ? e.brushSize : shape.width;
       ctx.clearRect(0, 0, this.ink.width, this.ink.height);
       ctx.save();
@@ -161,7 +176,7 @@ export class PaintStroke {
         right: Math.max(this.dirty.right, old.right), bottom: Math.max(this.dirty.bottom, old.bottom),
       } : old;
     }
-    if (this.tool === "line") this.lineBounds = bounds;
+    if (this.tool === "line" || this.tool === "gradient") this.lineBounds = bounds;
     if (bounds.right > bounds.left && bounds.bottom > bounds.top) {
       const old = this.dirty;
       this.dirty = old ? {
@@ -198,7 +213,7 @@ export class PaintStroke {
     const x = context(this.working);
     x.clearRect(left, top, w, h);
     draw(x, this.base);
-    x.globalAlpha = this.tool === "line" && e.shape.kind !== "line" ? 1 : e.brushOpacity;
+    x.globalAlpha = this.tool === "gradient" || (this.tool === "line" && e.shape.kind !== "line") ? 1 : e.brushOpacity;
     x.globalCompositeOperation =
       this.tool === "eraser" ? "destination-out" : "source-over";
     draw(x, this.clipped);
@@ -215,6 +230,8 @@ export class PaintStroke {
         ? "Erase"
         : this.tool === "clone"
           ? "Clone stamp"
+          : this.tool === "gradient"
+            ? this.editor.gradient === "radial" ? "Radial gradient" : "Linear gradient"
           : this.tool === "line"
             ? { line: "Line", rect: "Rectangle", ellipse: "Ellipse", polygon: "Polygon" }[this.editor.shape.kind]
             : "Brush stroke",

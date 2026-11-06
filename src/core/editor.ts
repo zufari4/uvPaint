@@ -58,6 +58,10 @@ export class Editor {
   brushSize = 32;
   toolHardness: Partial<Record<Tool, number>> = {};
   shape: ShapeOptions = { kind: "line", fill: false, outline: true, width: 4, sides: 6 };
+  /** Gradients run from the primary to the secondary color. */
+  gradient: "linear" | "radial" = "linear";
+  /** The fill/gradient group remembers its last tool for the button and the G key. */
+  fillTool: "fill" | "gradient" = "fill";
   private lineStyle = "";
   tolerance = 24;
   contiguous = true;
@@ -119,6 +123,8 @@ export class Editor {
       if (typeof shape.outline === "boolean") this.shape.outline = shape.outline;
       if (Number.isInteger(shape.sides) && shape.sides >= 3 && shape.sides <= 24) this.shape.sides = shape.sides;
       if (typeof shape.width === "number" && shape.width >= 1 && shape.width <= 1000) this.shape.width = shape.width;
+      if (saved?.gradient === "linear" || saved?.gradient === "radial") this.gradient = saved.gradient;
+      if (saved?.fillTool === "fill" || saved?.fillTool === "gradient") this.fillTool = saved.fillTool;
     } catch { /* defaults */ }
   }
   /** Eraser and clone always work at full strength; other tools use the primary color's alpha. */
@@ -143,8 +149,13 @@ export class Editor {
     this.emit();
   }
   private saveToolOptions() {
-    try { localStorage.setItem(toolOptionsKey, JSON.stringify({ hardness: this.toolHardness, shape: this.shape })); }
+    try { localStorage.setItem(toolOptionsKey, JSON.stringify({ hardness: this.toolHardness, shape: this.shape, gradient: this.gradient, fillTool: this.fillTool })); }
     catch { /* session-only options */ }
+  }
+  setGradient(kind: "linear" | "radial") {
+    this.gradient = kind;
+    this.saveToolOptions();
+    this.emit();
   }
   /** Updates the shape tool options; the chosen shape is remembered between sessions. */
   setShape(patch: Partial<ShapeOptions>) {
@@ -270,7 +281,7 @@ export class Editor {
   emit(pixels = false, interactive = false, region?: Region) {
     // A shape that is still editable follows color, size, opacity and shape option changes.
     if (!pixels && this.lineEdit) {
-      const style = JSON.stringify([this.color, this.backgroundColor, this.colorAlpha, this.backgroundAlpha, this.brushSize, this.shape]);
+      const style = JSON.stringify([this.color, this.backgroundColor, this.colorAlpha, this.backgroundAlpha, this.brushSize, this.shape, this.gradient]);
       if (style !== this.lineStyle) {
         this.lineStyle = style;
         this.lineEdit.stroke.moveLine(this.lineEdit.a, this.lineEdit.b);
@@ -1155,6 +1166,10 @@ export class Editor {
     }
     this.confirmTransform();
     this.tool = tool;
+    if ((tool === "fill" || tool === "gradient") && this.fillTool !== tool) {
+      this.fillTool = tool;
+      this.saveToolOptions();
+    }
     this.emit();
   }
   beginTransform(kind: "free" | "perspective" | "mesh" = "free") {

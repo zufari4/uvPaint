@@ -494,6 +494,12 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       ctx.strokeStyle = "#9ce8d6";
       ctx.lineWidth = 1 / zoom;
       ctx.fillStyle = "#172d2b";
+      if (placed && e.tool === "gradient") {
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
       for (const q of placed ? [a, b] : [a]) {
         ctx.fillRect(q.x - 5 / zoom, q.y - 5 / zoom, 10 / zoom, 10 / zoom);
         ctx.strokeRect(q.x - 5 / zoom, q.y - 5 / zoom, 10 / zoom, 10 / zoom);
@@ -533,7 +539,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       gesture.current = g;
       return;
     }
-    if (ev.button === 0 && e.tool !== "move" && e.tool !== "line" && !e.transform && e.textureIsolated &&
+    if (ev.button === 0 && e.tool !== "move" && e.tool !== "line" && e.tool !== "gradient" && !e.transform && e.textureIsolated &&
       hitIsland({ ...doc, islands: e.visibleIslands }, p) < 0) e.releaseFocus();
     if (selectionTool && doc.selection && selectionBox && !e.transform && !polygon.current.length) {
       const handle = hitSelectionHandle(selectionBox, p, zoom);
@@ -583,7 +589,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       e.fill(p);
       return;
     }
-    if (e.tool === "eyedropper" || ((e.tool === "brush" || e.tool === "line") && ev.altKey)) {
+    if (e.tool === "eyedropper" || ((e.tool === "brush" || e.tool === "line" || e.tool === "gradient") && ev.altKey)) {
       e.pickColor(p);
       return;
     }
@@ -593,7 +599,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       e.emit();
       return;
     }
-    if (e.tool === "line") {
+    if (e.tool === "line" || e.tool === "gradient") {
       if (!e.layer) {
         e.fail("Select a layer or add an empty layer before painting.");
         return;
@@ -612,7 +618,8 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
         }
         e.finishLine();
       }
-      if (p.x < 0 || p.y < 0 || p.x >= doc.width || p.y >= doc.height) return;
+      // Gradient end points may lie beyond the texture.
+      if (e.tool === "line" && (p.x < 0 || p.y < 0 || p.x >= doc.width || p.y >= doc.height)) return;
       e.lineEdit = { stroke: new PaintStroke(e, p), a: p, b: p, placed: false };
       g.lineHandle = "b"; g.fresh = true; gesture.current = g;
       e.emit();
@@ -655,7 +662,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       if (selectionTool && selectionBox && !e.transform && !polygon.current.length) {
         const handle = hitSelectionHandle(selectionBox, p, zoom);
         ev.currentTarget.style.cursor = handle < 0 ? "" : selectionCursors[handle];
-      } else if (e.tool === "line" && e.lineEdit) {
+      } else if ((e.tool === "line" || e.tool === "gradient") && e.lineEdit) {
         const { a, b, placed } = e.lineEdit;
         const near = (q: Point) => Math.hypot(q.x - p.x, q.y - p.y) * zoom <= 8;
         ev.currentTarget.style.cursor = placed && (near(a) || near(b)) ? "move" : "";
@@ -695,7 +702,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       // Dragging right after the first press draws the line in one gesture.
       if (g.fresh) line.placed = true;
       const handle = g.lineHandle ?? "b";
-      line[handle] = ev.shiftKey ? constrainShape(e.shape.kind, handle === "a" ? line.b : line.a, p) : p;
+      line[handle] = ev.shiftKey ? constrainShape(e.tool === "gradient" ? "line" : e.shape.kind, handle === "a" ? line.b : line.a, p) : p;
       line.stroke.moveLine(line.a, line.b);
       return;
     }
