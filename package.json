@@ -34,7 +34,8 @@
     "test:selection": "node scripts/regression-selection.mjs",
     "test:docking-import": "node scripts/regression-docking-import.mjs",
     "test:packaged": "node scripts/packaged-smoke.mjs",
-    "dist": "npm run build && electron-builder --win --x64 --dir"
+    "dist": "npm run build && electron-builder --win --x64 --dir",
+    "dist:installer": "npm run build && electron-builder --win nsis --x64"
   },
   "dependencies": {
     "lucide-react": "^0.577.0",
@@ -71,6 +72,17 @@
     "win": {
       "icon": "build/icon.ico",
       "signExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "uvPaint",
+      "artifactName": "uvPaint-Setup-${version}.exe",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     }
   }
 }

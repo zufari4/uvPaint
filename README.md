@@ -50,11 +50,11 @@ Sliders update the 2D texture and the 3D model while you drag them; the whole im
 
 ## 🚀 Getting started
 
-1. Get the **v1.0.0** source from the [Releases](https://github.com/zufari4/uvPaint/releases/tag/v1.0.0) page (or clone the repository) and build it: `npm ci` then `npm run dist`.
-2. Run `release/current/win-unpacked/uvPaint.exe`. Keep the whole `win-unpacked` folder together — the executable needs the files next to it.
+1. ⬇️ Download **[uvPaint-Setup-1.0.0.exe](https://github.com/zufari4/uvPaint/releases/download/v1.0.0/uvPaint-Setup-1.0.0.exe)** from the [Releases](https://github.com/zufari4/uvPaint/releases/tag/v1.0.0) page and run it. The installer is not code-signed yet: if SmartScreen appears, choose **More info → Run anyway**.
+2. Start **uvPaint** from the Start menu or the desktop shortcut.
 3. Open a GLB (**Ctrl+O**) or try the built-in sample, pick a material and start painting.
 
-No installer, account, Blender or internet connection is required.
+No account, Blender or internet connection is required. To build it yourself, see [Building from source](#️-building-from-source); the result is `release/current/win-unpacked/uvPaint.exe` (keep the whole folder together).
 
 ## ⌨️ Shortcuts
 
