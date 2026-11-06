@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ShapeKind, Tool } from "../types";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
+import { ColorButton } from "./ColorPicker";
 export const shapes: [ShapeKind, typeof Move, string][] = [
   ["line", Slash, "Line"],
   ["rect", Square, "Rectangle"],
@@ -110,16 +111,11 @@ export function ToolRail() {
           </Button>
         </div>
       ))}
-      <div className="tool-colors" role="group" aria-label="Primary and secondary colors"
-        onKeyDown={ev => {
-          if (ev.code === "KeyX" && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
-            ev.preventDefault(); ev.stopPropagation(); [e.color, e.backgroundColor] = [e.backgroundColor, e.color]; e.emit();
-          }
-        }}>
-        <input className="secondary-color" type="color" aria-label="Secondary color" title="Secondary color · X swaps colors"
-          value={e.backgroundColor} onChange={ev => { e.backgroundColor = ev.target.value; e.emit(); }} />
-        <input className="primary-color" type="color" aria-label="Primary color" title="Primary color · X swaps colors"
-          value={e.color} onChange={ev => { e.color = ev.target.value; e.emit(); }} />
+      <div className="tool-colors" role="group" aria-label="Primary and secondary colors">
+        <ColorButton className="secondary-color" label="Secondary color" title="Secondary color · shape outline · X swaps colors"
+          color={e.backgroundColor} alpha={e.backgroundAlpha} onChange={(color, alpha) => e.setColor("secondary", color, alpha)} />
+        <ColorButton className="primary-color" label="Primary color" title="Primary color · X swaps colors"
+          color={e.color} alpha={e.colorAlpha} onChange={(color, alpha) => e.setColor("primary", color, alpha)} />
       </div>
     </aside>
   );

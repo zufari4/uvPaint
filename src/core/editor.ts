@@ -52,10 +52,12 @@ export class Editor {
   selectionMode: SelectionMode = "replace";
   color = "#f06b4f";
   backgroundColor = "#ffffff";
+  /** Alpha of the primary and secondary colors; painting takes its opacity from the color. */
+  colorAlpha = 1;
+  backgroundAlpha = 1;
   brushSize = 32;
-  toolOpacity: Partial<Record<Tool, number>> = {};
   toolHardness: Partial<Record<Tool, number>> = {};
-  shape: ShapeOptions = { kind: "line", fill: "none", outline: true, width: 4, sides: 6 };
+  shape: ShapeOptions = { kind: "line", fill: false, outline: true, width: 4, sides: 6 };
   private lineStyle = "";
   tolerance = 24;
   contiguous = true;
@@ -109,29 +111,45 @@ export class Editor {
     this.studioLighting = preferences.studioLighting;
     try {
       const saved = JSON.parse(localStorage.getItem(toolOptionsKey) ?? "{}");
-      for (const [field, target] of [["opacity", this.toolOpacity], ["hardness", this.toolHardness]] as const)
-        for (const [tool, value] of Object.entries(saved?.[field] ?? {}))
-          if (typeof value === "number" && value >= 0 && value <= 1) target[tool as Tool] = value;
+      for (const [tool, value] of Object.entries(saved?.hardness ?? {}))
+        if (typeof value === "number" && value >= 0 && value <= 1) this.toolHardness[tool as Tool] = value;
       const shape = saved?.shape ?? {};
       if (["line", "rect", "ellipse", "polygon"].includes(shape.kind)) this.shape.kind = shape.kind;
-      if (["none", "primary", "secondary"].includes(shape.fill)) this.shape.fill = shape.fill;
+      if (typeof shape.fill === "boolean") this.shape.fill = shape.fill;
       if (typeof shape.outline === "boolean") this.shape.outline = shape.outline;
       if (Number.isInteger(shape.sides) && shape.sides >= 3 && shape.sides <= 24) this.shape.sides = shape.sides;
       if (typeof shape.width === "number" && shape.width >= 1 && shape.width <= 1000) this.shape.width = shape.width;
     } catch { /* defaults */ }
   }
-  get brushOpacity() { return this.toolOpacity[this.tool] ?? 1; }
-  set brushOpacity(value: number) { this.toolOpacity[this.tool] = value; this.saveToolOptions(); }
+  /** Eraser and clone always work at full strength; other tools use the primary color's alpha. */
+  get brushOpacity() { return this.tool === "eraser" || this.tool === "clone" ? 1 : this.colorAlpha; }
+  set brushOpacity(value: number) { this.colorAlpha = Math.min(1, Math.max(0, value)); }
   get brushHardness() { return this.toolHardness[this.tool] ?? 1; }
   set brushHardness(value: number) { this.toolHardness[this.tool] = value; this.saveToolOptions(); }
+  setColor(which: "primary" | "secondary", color: string, alpha: number) {
+    if (which === "primary") { this.color = color; this.colorAlpha = alpha; }
+    else { this.backgroundColor = color; this.backgroundAlpha = alpha; }
+    this.emit();
+  }
+  swapColors() {
+    [this.color, this.backgroundColor] = [this.backgroundColor, this.color];
+    [this.colorAlpha, this.backgroundAlpha] = [this.backgroundAlpha, this.colorAlpha];
+    this.emit();
+  }
+  resetColors() {
+    this.color = "#000000";
+    this.backgroundColor = "#ffffff";
+    this.colorAlpha = this.backgroundAlpha = 1;
+    this.emit();
+  }
   private saveToolOptions() {
-    try { localStorage.setItem(toolOptionsKey, JSON.stringify({ opacity: this.toolOpacity, hardness: this.toolHardness, shape: this.shape })); }
+    try { localStorage.setItem(toolOptionsKey, JSON.stringify({ hardness: this.toolHardness, shape: this.shape })); }
     catch { /* session-only options */ }
   }
   /** Updates the shape tool options; the chosen shape is remembered between sessions. */
   setShape(patch: Partial<ShapeOptions>) {
     this.shape = { ...this.shape, ...patch };
-    if (this.shape.fill === "none") this.shape.outline = true;
+    if (!this.shape.fill) this.shape.outline = true;
     this.saveToolOptions();
     this.emit();
   }
@@ -252,7 +270,7 @@ export class Editor {
   emit(pixels = false, interactive = false, region?: Region) {
     // A shape that is still editable follows color, size, opacity and shape option changes.
     if (!pixels && this.lineEdit) {
-      const style = JSON.stringify([this.color, this.backgroundColor, this.brushSize, this.brushOpacity, this.shape]);
+      const style = JSON.stringify([this.color, this.backgroundColor, this.colorAlpha, this.backgroundAlpha, this.brushSize, this.shape]);
       if (style !== this.lineStyle) {
         this.lineStyle = style;
         this.lineEdit.stroke.moveLine(this.lineEdit.a, this.lineEdit.b);
@@ -355,7 +373,7 @@ export class Editor {
       openDocuments: [...this.docs.values()].map(doc => documents.indexOf(doc)), activeDocument: documents.indexOf(this.doc),
       hiddenFaces: this.hiddenFaces, previewMode: this.previewMode, previewEdges: this.previewEdges,
       paint: { tool: this.tool, color: this.color, backgroundColor: this.backgroundColor, brushSize: this.brushSize,
-        brushOpacity: this.brushOpacity, tolerance: this.tolerance, contiguous: this.contiguous } });
+        brushOpacity: this.colorAlpha, backgroundAlpha: this.backgroundAlpha, tolerance: this.tolerance, contiguous: this.contiguous } });
   }
   async saveProject(saveAs = false) {
     if (!this.doc) return;
@@ -399,7 +417,8 @@ export class Editor {
     this.hiddenFaces = state.hiddenFaces;this.previewEdges = state.previewEdges;
     this.textureFocusEnabled = true;
     this.tool = state.paint.tool;this.color = state.paint.color;this.backgroundColor = state.paint.backgroundColor;
-    this.brushSize = state.paint.brushSize;this.brushOpacity = state.paint.brushOpacity;this.tolerance = state.paint.tolerance;this.contiguous = state.paint.contiguous;
+    this.brushSize = state.paint.brushSize;this.colorAlpha = state.paint.brushOpacity;this.backgroundAlpha = state.paint.backgroundAlpha ?? 1;
+    this.tolerance = state.paint.tolerance;this.contiguous = state.paint.contiguous;
     this.islandMenu = null;this.pickingLayerIsland = false;this.cloneSource = null;this.output = null;
     this.projectName = name;this.projectHandle = handle;
     this.emit(true);this.notify(`Project opened: ${name}`);

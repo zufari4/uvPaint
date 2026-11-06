@@ -116,12 +116,12 @@ export function HelpDialog({ close }: { close: () => void }) {
             B brush · N line · E eraser · G fill · I eyedropper
             <br />
             Line: click two points or drag, drag the end points to adjust, Enter applies, Esc cancels, Shift snaps to 45°
-            <br />Shapes: hold or right-click the line button to pick a rectangle, ellipse or regular polygon; Shift draws squares and circles
+            <br />Shapes: hold or right-click the line button to pick a rectangle, ellipse or regular polygon; fill uses the primary color, the outline the secondary one; Shift draws squares and circles
             <br />S clone stamp, Alt-click to set source; the source then moves with the brush · [ / ] brush size
             <br />
             F resizes the brush: move the mouse, click or Enter applies, Esc / right-click cancels
             <br />
-            Alt-click with Brush samples color · 1–9 / 0 opacity
+            Alt-click with Brush samples color · 1–9 / 0 color alpha
             <br />D black/white · X swaps foreground/background
           </dd>
           <dt>Navigation</dt>

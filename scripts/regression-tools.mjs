@@ -68,10 +68,11 @@ try {
   await page.mouse.move(...at(60,60));
   check(await page.getByTestId('clone-source').isVisible(),'Clone source marker follows the pointer');
 
-  // Per-tool opacity and brush hardness.
-  const opacity=await page.evaluate(()=>{e.setTool('brush');e.brushOpacity=.3;e.setTool('eraser');const eraser=e.brushOpacity;e.brushOpacity=.7;e.setTool('brush');
-    return {brush:e.brushOpacity,eraser,stored:JSON.parse(localStorage.getItem('uvpaint.toolOptions')).opacity};});
-  check(opacity.brush===.3&&opacity.eraser===1&&opacity.stored.eraser===.7,'Each tool keeps its own opacity across tool switches and launches');
+  // Paint opacity comes from the color alpha; eraser and clone work at full strength.
+  const opacity=await page.evaluate(()=>{e.setTool('brush');e.setColor('primary','#123456',.3);const brush=e.brushOpacity;e.setTool('eraser');const eraser=e.brushOpacity;e.setTool('brush');
+    return {brush,eraser,again:e.brushOpacity};});
+  check(opacity.brush===.3&&opacity.eraser===1&&opacity.again===.3,'Brush opacity follows the primary color alpha; the eraser stays at full strength');
+  check(await page.getByLabel('Brush opacity').count()===0,'Tool options no longer have a separate Opacity field');
   const soft=await page.evaluate(()=>{e.addEmpty();e.color='#000000';e.brushOpacity=1;e.brushSize=40;
     e.brushHardness=1;new PaintStroke(e,{x:60,y:60}).finish();e.brushHardness=0;new PaintStroke(e,{x:180,y:60}).finish();
     const d=e.layer.canvas.getContext('2d');const a=(x,y)=>d.getImageData(x,y,1,1).data[3];return {hard:a(76,60),soft:a(196,60),center:a(180,60)};});

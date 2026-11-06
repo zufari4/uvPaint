@@ -35,10 +35,10 @@ try {
     e.addEmpty();context(e.layer.canvas).fillStyle='#ff0000';context(e.layer.canvas).fillRect(250,80,200,40);
     e.tool='clone';e.cloneSource={x:300,y:100};e.brushOpacity=.5;
     const stamp=new PaintStroke(e,{x:300,y:300});stamp.draw({x:350,y:300});stamp.finish();
-    ok(pixel(e.layer.canvas,300,300)[0]===255&&pixel(e.layer.canvas,350,300)[3]===128,'Clone stamp copies the source along its path and respects stroke opacity');
+    ok(pixel(e.layer.canvas,300,300)[0]===255&&pixel(e.layer.canvas,350,300)[3]===255,'Clone stamp copies the source along its path at full strength');
     e.tool='eraser';e.brushOpacity=.5;const beforeErase=e.layer.canvas;
     const erase=new PaintStroke(e,{x:300,y:300});erase.draw({x:350,y:300});await frame();erase.draw({x:300,y:300});erase.finish();
-    ok(Math.abs(pixel(e.layer.canvas,300,300)[3]-64)<=1&&pixel(e.layer.canvas,300,100)[3]===255,'Eraser respects opacity without repeated alpha loss or changes outside its path');
+    ok(pixel(e.layer.canvas,300,300)[3]===0&&pixel(e.layer.canvas,300,100)[3]===255,'Eraser ignores the color alpha and changes nothing outside its path');
     e.undo();ok(e.layer.canvas===beforeErase,'Eraser Undo restores exact previous pixels');
     const beforeCancel=e.layer.canvas,undoCount=e.history.undoStack.length;
     const canceled=new PaintStroke(e,{x:300,y:300});canceled.draw({x:350,y:300});canceled.cancel();await frame();

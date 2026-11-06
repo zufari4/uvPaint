@@ -68,9 +68,10 @@ try {
   check(await page.evaluate(() => document.querySelector('[data-testid=preview-canvas]') === window.previewCanvas && e.layer.canvas.toDataURL() === window.sourcePixels), 'Expanding views preserves the renderer and document pixels');
   await page.evaluate(() => { e.color='#123456';e.backgroundColor='#abcdef';e.emit(); });
   await page.getByTestId('texture-canvas').focus(); await page.keyboard.press('KeyX');
-  check(await page.getByLabel('Primary color',{exact:true}).inputValue()==='#abcdef' && await page.getByLabel('Secondary color',{exact:true}).inputValue()==='#123456', 'X swaps primary and secondary swatches below the tools');
+  const swatch = (label) => page.getByLabel(label,{exact:true}).getAttribute('data-color');
+  check(await swatch('Primary color')==='#abcdef' && await swatch('Secondary color')==='#123456', 'X swaps primary and secondary swatches below the tools');
   await page.getByLabel('Secondary color',{exact:true}).focus(); await page.keyboard.press('KeyX');
-  check(await page.getByLabel('Primary color',{exact:true}).inputValue()==='#123456', 'Color swap also works with focus on a swatch');
+  check(await swatch('Primary color')==='#123456', 'Color swap also works with focus on a swatch');
   const viewport = page.getByTestId('preview-canvas'); await viewport.hover(); await page.keyboard.press('Numpad1'); await viewport.hover();
   await page.waitForFunction(() => e.model.parts.some(p=>p.children.some(c=>c.userData.uvPaintHover && c.visible)));
   check(await page.evaluate(() => e.doc.selectedIslands.length===0 && e.history.undoStack.length===0), 'Hover highlights islands without selecting or editing them');

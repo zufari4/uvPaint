@@ -39,8 +39,8 @@ export class PaintStroke {
       throw new Error(
         "The active layer opacity is 0%. Increase it before painting.",
       );
-    if (editor.brushOpacity === 0)
-      throw new Error("Brush opacity is 0%. Increase Opacity to paint.");
+    if (editor.brushOpacity === 0 && !(editor.tool === "line" && editor.shape.kind !== "line"))
+      throw new Error("The paint color is fully transparent. Raise its alpha to paint.");
     if (d.restrict && !d.islands.length && !layer.uvBinding)
       throw new Error(
         "This UV map has no islands. Choose another UV map or disable UV clipping.",
@@ -106,11 +106,17 @@ export class PaintStroke {
           box = { left: from.x - r, top: from.y - r, right: from.x + r, bottom: from.y + r };
         }
         ctx.lineJoin = "miter";
-        if (shape.fill !== "none") {
-          ctx.fillStyle = shape.fill === "primary" ? e.color : e.backgroundColor;
+        // Shapes carry their own alphas: fill in the primary color, outline in the secondary one.
+        if (shape.fill) {
+          ctx.globalAlpha = e.colorAlpha;
+          ctx.fillStyle = e.color;
           ctx.fill();
         }
-        if (shape.outline || shape.fill === "none") ctx.stroke();
+        if (shape.outline || !shape.fill) {
+          ctx.globalAlpha = e.backgroundAlpha;
+          ctx.strokeStyle = e.backgroundColor;
+          ctx.stroke();
+        }
       }
       ctx.restore();
     } else {
@@ -192,7 +198,7 @@ export class PaintStroke {
     const x = context(this.working);
     x.clearRect(left, top, w, h);
     draw(x, this.base);
-    x.globalAlpha = e.brushOpacity;
+    x.globalAlpha = this.tool === "line" && e.shape.kind !== "line" ? 1 : e.brushOpacity;
     x.globalCompositeOperation =
       this.tool === "eraser" ? "destination-out" : "source-over";
     draw(x, this.clipped);

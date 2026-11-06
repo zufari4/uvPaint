@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
+import { ColorButton } from "./ColorPicker";
 export function OptionsBar() {
   const e = useEditor();
   // Typed values wait for Set; otherwise the fields follow the frame while it is dragged.
@@ -54,18 +55,9 @@ export function OptionsBar() {
           }[e.tool]
         }
       </span>
-      {["brush", "line", "fill", "eyedropper"].includes(e.tool) && (
-        <label className="color-swatch" title="Paint color">
-          <input
-            aria-label="Paint color"
-            type="color"
-            value={e.color}
-            onChange={(ev) => {
-              e.color = ev.target.value;
-              e.emit();
-            }}
-          />
-        </label>
+      {(["brush", "fill", "eyedropper"].includes(e.tool) || (e.tool === "line" && e.shape.kind === "line")) && (
+        <ColorButton label="Paint color" title="Paint color and alpha" color={e.color} alpha={e.colorAlpha}
+          onChange={(color, alpha) => e.setColor("primary", color, alpha)} />
       )}
       {!selection && e.doc?.selection && (
         <Button title="Clear selection (Ctrl+D)" onClick={() => e.deselect()}>
@@ -169,24 +161,6 @@ export function OptionsBar() {
             px
           </label>
           )}
-          <label>
-            Opacity{" "}
-            <input
-              aria-label="Brush opacity"
-              type="number"
-              min="0"
-              max="100"
-              value={Math.round(e.brushOpacity * 100)}
-              onChange={(ev) => {
-                e.brushOpacity = Math.max(
-                  0,
-                  Math.min(1, +ev.target.value / 100),
-                );
-                e.emit();
-              }}
-            />{" "}
-            %
-          </label>
           {(e.tool === "brush" || e.tool === "eraser") && (
             <label title="Edge softness: 100% is a hard edge">
               Hardness{" "}
@@ -209,21 +183,21 @@ export function OptionsBar() {
           )}
           {e.tool === "line" && e.shape.kind !== "line" && (
             <>
-              <label title="Shape fill">
-                Fill{" "}
-                <select aria-label="Shape fill" value={e.shape.fill}
-                  onChange={ev => e.setShape({ fill: ev.target.value as typeof e.shape.fill })}>
-                  <option value="none">None</option>
-                  <option value="primary">Primary color</option>
-                  <option value="secondary">Secondary color</option>
-                </select>
+              <label title="Fill with the primary color">
+                <input type="checkbox" aria-label="Shape fill" checked={e.shape.fill}
+                  onChange={ev => e.setShape({ fill: ev.target.checked })} />{" "}
+                Fill
               </label>
-              <label title="Outline in the primary color">
+              <ColorButton label="Fill color" title="Fill color (primary)" color={e.color} alpha={e.colorAlpha}
+                onChange={(color, alpha) => e.setColor("primary", color, alpha)} />
+              <label title="Outline in the secondary color">
                 <input type="checkbox" aria-label="Shape outline" checked={e.shape.outline}
-                  disabled={e.shape.fill === "none"}
+                  disabled={!e.shape.fill}
                   onChange={ev => e.setShape({ outline: ev.target.checked })} />{" "}
                 Outline
               </label>
+              <ColorButton label="Outline color" title="Outline color (secondary)" color={e.backgroundColor} alpha={e.backgroundAlpha}
+                onChange={(color, alpha) => e.setColor("secondary", color, alpha)} />
               <label title="Outline width">
                 <input aria-label="Outline width" type="number" min="1" max="1000" value={e.shape.width}
                   disabled={!e.shape.outline}

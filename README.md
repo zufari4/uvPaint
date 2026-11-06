@@ -74,9 +74,9 @@ Requires Node.js 18+; npm downloads the Electron runtime during installation. Up
 | Rectangle · lasso · polygon · magic wand | **M** · **L** · **Shift+L** · **W** |
 | Brush · line · eraser · fill · eyedropper · clone | **B** · **N** · **E** · **G** · **I** · **S** |
 | Resize brush under the cursor | **F**, move, click (**Esc** cancels) |
-| Brush size / opacity | **[** **]** / **1–9**, **0** |
+| Brush size / color alpha | **[** **]** / **1–9**, **0** |
 | Straight line | **N**: click two points or drag, drag end points to adjust, **Enter** applies, **Shift** snaps to 45° |
-| Shapes | Hold or right-click the line button to pick a rectangle, ellipse or regular polygon; choose fill and outline in the options bar, **Shift** draws squares and circles |
+| Shapes | Hold or right-click the line button to pick a rectangle, ellipse or regular polygon; choose fill (primary color) and outline (secondary color) in the options bar, **Shift** draws squares and circles |
 | Select all / deselect / invert | **Ctrl+A** / **Ctrl+D** / **Ctrl+Shift+I** |
 | Copy · cut · paste · to new layer · extract | **Ctrl+C** · **Ctrl+X** · **Ctrl+V** · **Ctrl+J** · **Ctrl+Shift+J** |
 | Apply / cancel transform | **Enter** / **Esc** |
@@ -95,7 +95,7 @@ Shortcuts use physical keys, so they also work with a Russian keyboard layout.
 - 🪣 **Fill** on a UV-mapped texture fills the whole island under the cursor.
 - 📌 New and pasted layers appear right above the selected layer.
 - 🧱 Drag the Layers panel by its top strip to any corner of the texture view, or collapse it to a side tab with the **»** button.
-- 🎚️ Every tool remembers its own opacity; brush and eraser also have a **Hardness** setting for soft edges.
+- � Built-in color picker with a hue wheel, value and alpha sliders: paint transparency comes from the color itself; brush and eraser also have a **Hardness** setting for soft edges.
 - 🧷 The clone stamp keeps its offset between strokes: after Alt-click the source marker travels with the brush.
 
 ## 🛠️ Building from source

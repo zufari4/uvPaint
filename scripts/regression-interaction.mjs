@@ -222,9 +222,9 @@ try {
     "Applying transform hides outside pixels with a mask without deleting them",
   );
   await page.keyboard.press("b");
-  await page.keyboard.press("Digit5");
   await page.keyboard.press("d");
   await page.keyboard.press("x");
+  await page.keyboard.press("Digit5");
   await page.keyboard.press("BracketRight");
   ok(
     await page.evaluate(async () => {

@@ -14,7 +14,8 @@ type SavedLayer = Omit<Layer, "canvas" | "uvMask" | "placement"> & {
   placement?: { source: number; rest: number; points: Point[]; kind: "free" | "perspective" | "mesh" };
 };
 type SavedDocument = Omit<TextureDocument, "layers" | "selection"> & { layers: SavedLayer[]; selection: number | null };
-export type ProjectPaint = { tool: Tool; color: string; backgroundColor: string; brushSize: number; brushOpacity: number; tolerance: number; contiguous: boolean };
+/** `brushOpacity` holds the primary color's alpha. */
+export type ProjectPaint = { tool: Tool; color: string; backgroundColor: string; brushSize: number; brushOpacity: number; backgroundAlpha?: number; tolerance: number; contiguous: boolean };
 export type ProjectState = {
   model: ModelAsset | null;
   documents: TextureDocument[];
@@ -252,6 +253,7 @@ export async function decodeProject(bytes: Uint8Array, checkSize: (w: number, h:
     requireValue(record(paint) && ["move", "rect", "lasso", "polygon", "wand", "brush", "line", "eraser", "fill", "eyedropper", "clone", "island", "pan"].includes(paint.tool) &&
       text(paint.color) && /^#[0-9a-f]{6}$/i.test(paint.color) && text(paint.backgroundColor) && /^#[0-9a-f]{6}$/i.test(paint.backgroundColor) &&
       finite(paint.brushSize) && paint.brushSize >= 1 && finite(paint.brushOpacity) && paint.brushOpacity >= 0 && paint.brushOpacity <= 1 &&
+      (paint.backgroundAlpha === undefined || (finite(paint.backgroundAlpha) && paint.backgroundAlpha >= 0 && paint.backgroundAlpha <= 1)) &&
       finite(paint.tolerance) && paint.tolerance >= 0 && paint.tolerance <= 255 && typeof paint.contiguous === "boolean", "invalid paint settings.");
     return { model, documents, openDocuments: manifest.openDocuments, activeDocument: manifest.activeDocument, hiddenFaces,
       previewMode: "studio", previewEdges: manifest.previewEdges, paint };

@@ -100,11 +100,8 @@ export function useShortcuts() {
         return;
       }
       if (k === "d" || k === "x") {
-        if (k === "d") {
-          e.color = "#000000";
-          e.backgroundColor = "#ffffff";
-        } else [e.color, e.backgroundColor] = [e.backgroundColor, e.color];
-        e.emit();
+        if (k === "d") e.resetColors();
+        else e.swapColors();
         ev.preventDefault();
         return;
       }
@@ -115,9 +112,9 @@ export function useShortcuts() {
       }
       if (
         /^Digit[0-9]$/.test(ev.code) &&
-        ["brush", "line", "eraser", "clone", "fill"].includes(e.tool)
+        ["brush", "line", "fill"].includes(e.tool)
       ) {
-        e.brushOpacity = (Number(ev.code.slice(-1)) || 10) / 10;
+        e.colorAlpha = (Number(ev.code.slice(-1)) || 10) / 10;
         e.emit();
         ev.preventDefault();
         return;

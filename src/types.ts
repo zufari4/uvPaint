@@ -96,7 +96,7 @@ export type SelectionMode = "replace" | "add" | "subtract";
 export type ShapeKind = "line" | "rect" | "ellipse" | "polygon";
 export type ShapeOptions = {
   kind: ShapeKind;
-  fill: "none" | "primary" | "secondary";
+  fill: boolean;
   outline: boolean;
   width: number;
   sides: number;
