@@ -22,6 +22,7 @@ export class PaintStroke {
   private frame = 0;
   private ended = false;
   private tool: Editor["tool"];
+  private hardness = 1;
   constructor(
     public editor: Editor,
     p: Point,
@@ -58,6 +59,10 @@ export class PaintStroke {
     this.last = this.start = p;
     this.tool = editor.tool;
     this.clone = this.tool === "clone" ? this.base : null;
+    // Aligned clone: the first stroke fixes the offset, later strokes keep sampling relative to it.
+    if (this.clone && editor.cloneSource && !editor.cloneOffset)
+      editor.cloneOffset = { x: p.x - editor.cloneSource.x, y: p.y - editor.cloneSource.y };
+    this.hardness = this.tool === "brush" || this.tool === "eraser" ? editor.brushHardness : 1;
     const next = snapshot(d);
     next.layers.find(l => l.id === next.activeId)!.canvas = this.working;
     editor.docs.set(editor.activeId, next);
@@ -88,17 +93,23 @@ export class PaintStroke {
     } else {
       const distance = Math.hypot(p.x - from.x, p.y - from.y),
         steps = Math.max(1, Math.ceil(distance / Math.max(1, e.brushSize / 5)));
+      const radius = e.brushSize / 2, soft = this.hardness < 0.99 && !this.clone;
+      const rgb = soft ? e.color.match(/[0-9a-f]{2}/gi)!.map((h) => parseInt(h, 16)).join(",") : "";
       for (let i = 1; i <= steps; i++) {
         const x = from.x + ((p.x - from.x) * i) / steps,
           y = from.y + ((p.y - from.y) * i) / steps;
         ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, e.brushSize / 2, 0, Math.PI * 2);
-        if (this.clone && e.cloneSource) {
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        if (this.clone && e.cloneOffset) {
           ctx.clip();
-          const dx = this.start.x - e.cloneSource.x,
-            dy = this.start.y - e.cloneSource.y;
-          ctx.drawImage(this.clone, dx, dy);
+          ctx.drawImage(this.clone, e.cloneOffset.x, e.cloneOffset.y);
+        } else if (soft) {
+          const g = ctx.createRadialGradient(x, y, radius * this.hardness, x, y, radius);
+          g.addColorStop(0, `rgba(${rgb},1)`);
+          g.addColorStop(1, `rgba(${rgb},0)`);
+          ctx.fillStyle = g;
+          ctx.fill();
         } else {
           ctx.fillStyle = e.color;
           ctx.fill();
@@ -130,6 +141,11 @@ export class PaintStroke {
     }
     this.last = p;
     if (!this.frame) this.frame = requestAnimationFrame(() => this.flush(true));
+  }
+  /** Redraws an editable line between two (possibly moved) end points. */
+  moveLine(a: Point, b: Point) {
+    this.start = a;
+    this.draw(b);
   }
   private flush(interactive: boolean) {
     if (this.frame) cancelAnimationFrame(this.frame);

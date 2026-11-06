@@ -16,20 +16,18 @@ export class History {
     this.trim();
   }
   // Pixel buffers are immutable between operations, so snapshots share unchanged layers.
+  // Only buffers that the newest snapshot no longer uses cost extra memory; buffers still
+  // shared with the live document must not count, or large layer stacks keep a single step.
   trim() {
-    const budget = 384 * 1024 * 1024;
+    const budget = 512 * 1024 * 1024;
+    const buffers = (doc: TextureDocument) => doc.layers.flatMap((l) => [
+      l.canvas, l.uvMask, l.placement?.source, l.placement?.rest, l.placement?.rendered,
+    ].filter((c): c is HTMLCanvasElement => !!c));
     while (this.undoStack.length > 1) {
+      const live = new Set(buffers(this.undoStack[this.undoStack.length - 1].doc));
       const seen = new Set<HTMLCanvasElement>();
       for (const s of this.undoStack)
-        for (const l of s.doc.layers) {
-          seen.add(l.canvas);
-          if (l.uvMask) seen.add(l.uvMask);
-          if (l.placement) {
-            seen.add(l.placement.source);
-            seen.add(l.placement.rest);
-            seen.add(l.placement.rendered);
-          }
-        }
+        for (const c of buffers(s.doc)) if (!live.has(c)) seen.add(c);
       let bytes = 0;
       for (const c of seen) bytes += c.width * c.height * 4;
       if (bytes <= budget) break;

@@ -11,6 +11,8 @@ import {
   ArrowDownToLine,
   ImagePlus,
   SquareMousePointer,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import type { Layer, Blend } from "../types";
 import { useEditor } from "./hooks";
@@ -51,7 +53,11 @@ function Thumbnail({ layer, refresh }: { layer: Layer; refresh: number }) {
   }, [layer.canvas, layer.uvMask, crop, refresh]);
   return <canvas className="layer-thumb" ref={ref} width="44" height="36" />;
 }
-export function LayersPanel({ dockHandleProps }: { dockHandleProps?: HTMLAttributes<HTMLDivElement> }) {
+export function LayersPanel({ dockHandleProps, onCollapse, collapseSide = "right" }: {
+  dockHandleProps?: HTMLAttributes<HTMLDivElement>;
+  onCollapse?: () => void;
+  collapseSide?: "left" | "right";
+}) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const e = useEditor(),
     d = e.doc,
@@ -110,6 +116,9 @@ export function LayersPanel({ dockHandleProps }: { dockHandleProps?: HTMLAttribu
           />
           <span>%</span>
         </label>
+        {onCollapse && <Button className="layers-collapse" title="Collapse layers panel" onClick={onCollapse}>
+          {collapseSide === "right" ? <ChevronsRight size={15} /> : <ChevronsLeft size={15} />}
+        </Button>}
       </div>
       <div className="layer-list" ref={list}>
         {d?.layers
@@ -135,7 +144,8 @@ export function LayersPanel({ dockHandleProps }: { dockHandleProps?: HTMLAttribu
               >
                 {layer.visible ? <Eye size={14} /> : <EyeOff size={14} />}
               </Button>
-              <Thumbnail layer={layer} refresh={e.transform ? 0 : e.pixelsRevision} />
+              {/* Only the active layer's pixels change in place; other thumbnails redraw when their buffer changes. */}
+              <Thumbnail layer={layer} refresh={layer.id === d.activeId && !e.transform ? e.pixelsRevision : 0} />
               {renaming === layer.id ? <input
                 aria-label={`Layer name ${layer.name}`}
                 autoFocus

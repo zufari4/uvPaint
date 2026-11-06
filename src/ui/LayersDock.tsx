@@ -1,15 +1,22 @@
 import { useEffect, useRef, useState } from "react";
+import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import { LayersPanel } from "./LayersPanel";
 
 const corners = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
 type Corner = typeof corners[number];
 const key = "uvpaint.layersDock";
+const collapsedKey = "uvpaint.layersCollapsed";
 function initialCorner(): Corner {
   try { const saved = localStorage.getItem(key); if (corners.includes(saved as Corner)) return saved as Corner; } catch { /* Use the default when storage is unavailable. */ }
   return "top-right";
 }
 export function LayersDock() {
   const [dock, setDock] = useState<Corner>(initialCorner);
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(collapsedKey) === "1"; } catch { return false; } });
+  const collapse = (value: boolean) => {
+    setCollapsed(value);
+    try { localStorage.setItem(collapsedKey, value ? "1" : "0"); } catch { /* session only */ }
+  };
   const [preview, setPreview] = useState<Corner | null>(null);
   const panel = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; target: Corner | null } | null>(null);
@@ -26,11 +33,15 @@ export function LayersDock() {
     window.addEventListener("blur", cancel);
     return () => { window.removeEventListener("keydown", escape, true); window.removeEventListener("blur", cancel); };
   }, []);
+  const right = dock.endsWith("right");
+  if (collapsed) return <button className="layers-tab" data-dock={dock} title="Show layers" aria-label="Show layers" onClick={() => collapse(false)}>
+    {right ? <ChevronsLeft size={15} /> : <ChevronsRight size={15} />}<span>Layers</span>
+  </button>;
   return <>
     {preview && <div className="layers-dock-preview" data-dock={preview} aria-hidden="true"
       style={{ width: panel.current?.offsetWidth, height: panel.current?.offsetHeight }} />}
     <div ref={panel} className={`inspector layers-sidebar${preview ? " docking" : ""}`} data-dock={dock}>
-      <LayersPanel dockHandleProps={{
+      <LayersPanel collapseSide={right ? "right" : "left"} onCollapse={() => collapse(true)} dockHandleProps={{
         tabIndex: 0,
         "aria-label": "Layers panel docking",
         title: "Drag to dock in a corner · Arrow keys change corner · Escape cancels",

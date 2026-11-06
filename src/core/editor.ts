@@ -11,7 +11,7 @@ import type {
 } from "../types";
 import { canvas, context, cloneCanvas, masked, alphaBounds } from "./canvas";
 import { History, snapshot } from "./history";
-import { composite } from "../render/composite";
+import { composite, LayerCompositor } from "../render/composite";
 import { WarpRenderer } from "../render/warp";
 import { editingMask, extractIslands, islandMask, hitIsland } from "../tools/uv";
 import {
@@ -31,11 +31,13 @@ import { defaultStudioLighting, normalizeStudioLighting, type StudioLighting } f
 import { faceKey } from "../tools/uv-guides";
 import { sourceGeometry } from "../render/mesh-source";
 import { encodeProject, decodeProject } from "./project";
+import type { PaintStroke } from "../tools/paint";
 
 const insertAboveActive = (d: TextureDocument, layer: Layer) => {
   const index = d.layers.findIndex((l) => l.id === d.activeId);
   d.layers.splice(index < 0 ? d.layers.length : index + 1, 0, layer);
 };
+const toolOptionsKey = "uvpaint.toolOptions";
 
 export class Editor {
   docs = new Map<string, TextureDocument>();
@@ -50,7 +52,8 @@ export class Editor {
   color = "#f06b4f";
   backgroundColor = "#ffffff";
   brushSize = 32;
-  brushOpacity = 1;
+  toolOpacity: Partial<Record<Tool, number>> = {};
+  toolHardness: Partial<Record<Tool, number>> = {};
   tolerance = 24;
   contiguous = true;
   uvDisplay: UVDisplayMode = "outline";
@@ -76,6 +79,11 @@ export class Editor {
   private reducedPreview = false;
   private filterBase: TextureDocument | null = null;
   cloneSource: Point | null = null;
+  /** Offset from the clone source to the paint point, kept between strokes (aligned clone). */
+  cloneOffset: Point | null = null;
+  /** A placed but not yet applied line whose end points can still be dragged. */
+  lineEdit: { stroke: PaintStroke; a: Point; b: Point; placed: boolean } | null = null;
+  private compositor = new LayerCompositor();
   message = "Open a GLB to start, or create a texture.";
   notice: { id: number; text: string } | null = null;
   error = "";
@@ -95,6 +103,20 @@ export class Editor {
     this.textScale = preferences.textScale;
     this.uvDisplay = preferences.uvDisplay;
     this.studioLighting = preferences.studioLighting;
+    try {
+      const saved = JSON.parse(localStorage.getItem(toolOptionsKey) ?? "{}");
+      for (const [field, target] of [["opacity", this.toolOpacity], ["hardness", this.toolHardness]] as const)
+        for (const [tool, value] of Object.entries(saved?.[field] ?? {}))
+          if (typeof value === "number" && value >= 0 && value <= 1) target[tool as Tool] = value;
+    } catch { /* defaults */ }
+  }
+  get brushOpacity() { return this.toolOpacity[this.tool] ?? 1; }
+  set brushOpacity(value: number) { this.toolOpacity[this.tool] = value; this.saveToolOptions(); }
+  get brushHardness() { return this.toolHardness[this.tool] ?? 1; }
+  set brushHardness(value: number) { this.toolHardness[this.tool] = value; this.saveToolOptions(); }
+  private saveToolOptions() {
+    try { localStorage.setItem(toolOptionsKey, JSON.stringify({ opacity: this.toolOpacity, hardness: this.toolHardness })); }
+    catch { /* session-only options */ }
   }
   setUVDisplay(mode: UVDisplayMode) { this.uvDisplay = mode; this.savePreferences(); }
   get textureIsolated() { return this.textureFocusEnabled && !!this.layer?.uvBinding?.island.faces?.length; }
@@ -213,7 +235,7 @@ export class Editor {
   emit(pixels = false, interactive = false) {
     if (pixels && this.doc) {
       this.pixelsRevision++;
-      this.output = composite(this.doc, this.output ?? undefined);
+      this.output = this.compositor.render(this.doc, this.output ?? undefined);
       const slot = this.model?.slots.find((s) => s.id === this.activeId);
       if (slot) {
         let preview = this.output;
@@ -813,6 +835,10 @@ export class Editor {
   }
   undo() {
     if (this.pickingLayerIsland) { this.pickingLayerIsland = false; this.emit(); }
+    if (this.lineEdit) {
+      this.cancelLine();
+      return;
+    }
     if (this.transform) {
       this.cancelTransform();
       return;
@@ -826,6 +852,7 @@ export class Editor {
   }
   redo() {
     if (this.pickingLayerIsland) { this.pickingLayerIsland = false; this.emit(); }
+    this.finishLine();
     if (!this.doc || this.transform) return;
     const d = this.history.redo(this.doc);
     if (d) {
@@ -1245,6 +1272,7 @@ export class Editor {
     );
   }
   confirmTransform() {
+    this.finishLine();
     this.flushTransform();
     if (!this.transform) return;
     // Merely showing the frame (or returning it to its starting position)
@@ -1265,6 +1293,25 @@ export class Editor {
     if (this.doc) this.doc.selection = null;
     this.transform = null;
     this.emit(true);
+  }
+  finishLine() {
+    const line = this.lineEdit;
+    if (!line) return;
+    this.lineEdit = null;
+    line.stroke.finish();
+  }
+  cancelLine() {
+    const line = this.lineEdit;
+    if (!line) return;
+    this.lineEdit = null;
+    line.stroke.cancel();
+  }
+  /** Clicks on empty canvas end the island focus and show every layer again. */
+  releaseFocus() {
+    if (!this.textureFocusEnabled && !this.doc?.selectedIslands.length) return;
+    this.textureFocusEnabled = false;
+    if (this.doc) this.doc.selectedIslands = [];
+    this.emit();
   }
   cancelTransform() {
     if (this.transformFrame) cancelAnimationFrame(this.transformFrame);

@@ -175,11 +175,28 @@ export function OptionsBar() {
             />{" "}
             %
           </label>
+          {(e.tool === "brush" || e.tool === "eraser") && (
+            <label title="Edge softness: 100% is a hard edge">
+              Hardness{" "}
+              <input
+                aria-label="Brush hardness"
+                type="number"
+                min="0"
+                max="100"
+                value={Math.round(e.brushHardness * 100)}
+                onChange={(ev) => {
+                  e.brushHardness = Math.max(0, Math.min(1, +ev.target.value / 100));
+                  e.emit();
+                }}
+              />{" "}
+              %
+            </label>
+          )}
           {e.tool === "clone" && (
             <span className="options-hint">Alt-click to set source</span>
           )}
           {e.tool === "line" && (
-            <span className="options-hint">Drag to draw · Shift snaps to 45°</span>
+            <span className="options-hint">Click two points or drag · drag end points to adjust · Enter applies · Shift snaps to 45°</span>
           )}
         </>
       )}

@@ -1506,6 +1506,18 @@ button.texture-expand:hover:not(:disabled), button.texture-expand:focus-visible 
 .import-island-label { position:absolute; top:12px; left:12px; pointer-events:none; color:#c8e9df; }
 
 .brush-footprint { display: none; position: absolute; left: 0; top: 0; border: 1px solid #fff; box-shadow: 0 0 0 1px #111; border-radius: 50%; pointer-events: none; z-index: 3; box-sizing: border-box; }
+.clone-source { display: none; position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; pointer-events: none; z-index: 3;
+  background: linear-gradient(#fff, #fff) center / 18px 1px no-repeat, linear-gradient(#fff, #fff) center / 1px 18px no-repeat;
+  filter: drop-shadow(0 0 1px #000); }
+.clone-source::after { content: ""; position: absolute; inset: 4px; border: 1px solid #fff; border-radius: 50%; }
+.layers-tab { position: absolute; z-index: 5; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 5px;
+  background: #23262b; border: 1px solid #46515a; color: #c1c8cd; }
+.layers-tab span { writing-mode: vertical-rl; font-size: calc(10px * var(--ui-text-scale, 1.4)); letter-spacing: 1px; }
+.layers-tab[data-dock^=top] { top: 0; }
+.layers-tab[data-dock^=bottom] { bottom: 0; }
+.layers-tab[data-dock$=left] { left: 0; }
+.layers-tab[data-dock$=right] { right: 0; }
+.layers-collapse { margin-left: auto; padding: 3px; }
 .cursor-brush > canvas, .cursor-line > canvas, .cursor-eraser > canvas, .cursor-clone > canvas { cursor: none; }
 .canvas-host:has(.brush-footprint[data-size]) > canvas { cursor: crosshair; }
 .brush-footprint[data-size]::after {

@@ -23,7 +23,9 @@ import {
 } from "../tools/free-transform";
 
 type Gesture = {
-  kind: "pan" | "select" | "paint" | "transform" | "move-pending" | "selection-frame";
+  kind: "pan" | "select" | "paint" | "transform" | "move-pending" | "selection-frame" | "line";
+  lineHandle?: "a" | "b";
+  fresh?: boolean;
   start: Point;
   last: Point;
   points: Point[];
@@ -60,12 +62,22 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
   const [space, setSpace] = useState(false);
   const gesture = useRef<Gesture | null>(null);
   const brushCursor = useRef<HTMLDivElement>(null);
+  const cloneMarker = useRef<HTMLDivElement>(null);
   const cursorPoint = useRef<Point | null>(null);
   // Blender-style F resize: the ring is centred left of the pointer so the pointer starts on its edge.
   const sizing = useRef<{ center: Point; original: number } | null>(null);
   const endSizing = useRef<((cancel: boolean) => void) | null>(null);
   const updateBrushCursor = () => {
     const ring = brushCursor.current, resize = sizing.current, p = resize?.center ?? cursorPoint.current;
+    const marker = cloneMarker.current;
+    if (marker) {
+      // The clone source travels with the pointer once the first stroke has fixed the offset.
+      const source = !doc || e.tool !== "clone" || !e.cloneSource ? null
+        : e.cloneOffset ? (cursorPoint.current && { x: cursorPoint.current.x - e.cloneOffset.x * zoom, y: cursorPoint.current.y - e.cloneOffset.y * zoom })
+        : { x: origin.x + e.cloneSource.x * zoom, y: origin.y + e.cloneSource.y * zoom };
+      marker.style.display = source ? "block" : "none";
+      if (source) marker.style.transform = `translate(${source.x}px, ${source.y}px)`;
+    }
     if (!ring) return;
     const visible = !!doc && !!p && sizeTools.includes(e.tool) && (!!resize ||
       (!space && !e.pickingLayerIsland && !e.imageImport && !e.islandMenu && gesture.current?.kind !== "pan"));
@@ -82,7 +94,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     cursorPoint.current = { x: event.clientX - r.left, y: event.clientY - r.top };
     updateBrushCursor();
   };
-  useEffect(updateBrushCursor, [e.tool, e.brushSize, zoom, space, e.pickingLayerIsland, e.imageImport, e.islandMenu, doc?.id]);
+  useEffect(updateBrushCursor, [e.tool, e.brushSize, zoom, pan, space, e.pickingLayerIsland, e.imageImport, e.islandMenu, doc?.id, e.cloneSource, e.cloneOffset]);
   const polygon = useRef<Point[]>([]);
   const selectionTool = ["rect", "lasso", "polygon", "wand"].includes(e.tool);
   const selectionBox = doc?.selection ? selectionBounds(doc.selection) : null;
@@ -202,6 +214,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
           gesture.current.stroke.cancel();
           gesture.current = null;
         }
+        e.cancelLine();
       }
     };
     const up = (ev: KeyboardEvent) => {
@@ -406,16 +419,15 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
         }
       });
     }
-    if (e.cloneSource && e.tool === "clone") {
-      const p = e.cloneSource;
-      ctx.strokeStyle = "#fff";
+    if (e.lineEdit) {
+      const { a, b, placed } = e.lineEdit;
+      ctx.strokeStyle = "#9ce8d6";
       ctx.lineWidth = 1 / zoom;
-      ctx.beginPath();
-      ctx.moveTo(p.x - 8 / zoom, p.y);
-      ctx.lineTo(p.x + 8 / zoom, p.y);
-      ctx.moveTo(p.x, p.y - 8 / zoom);
-      ctx.lineTo(p.x, p.y + 8 / zoom);
-      ctx.stroke();
+      ctx.fillStyle = "#172d2b";
+      for (const q of placed ? [a, b] : [a]) {
+        ctx.fillRect(q.x - 5 / zoom, q.y - 5 / zoom, 10 / zoom, 10 / zoom);
+        ctx.strokeRect(q.x - 5 / zoom, q.y - 5 / zoom, 10 / zoom, 10 / zoom);
+      }
     }
     ctx.restore();
     ctx.strokeStyle = "#ffffff1a";
@@ -451,6 +463,8 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       gesture.current = g;
       return;
     }
+    if (ev.button === 0 && e.tool !== "move" && !e.transform && e.textureIsolated &&
+      hitIsland({ ...doc, islands: e.visibleIslands }, p) < 0) e.releaseFocus();
     if (selectionTool && doc.selection && selectionBox && !e.transform && !polygon.current.length) {
       const handle = hitSelectionHandle(selectionBox, p, zoom);
       if (handle >= 0) {
@@ -505,6 +519,32 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     }
     if (e.tool === "clone" && ev.altKey) {
       e.cloneSource = p;
+      e.cloneOffset = null;
+      e.emit();
+      return;
+    }
+    if (e.tool === "line") {
+      if (!e.layer) {
+        e.fail("Select a layer or add an empty layer before painting.");
+        return;
+      }
+      g.kind = "line";
+      const line = e.lineEdit;
+      if (line) {
+        const near = (q: Point) => Math.hypot(q.x - p.x, q.y - p.y) * zoom <= 8;
+        const handle = line.placed ? (near(line.b) ? "b" : near(line.a) ? "a" : null) : null;
+        if (handle) { g.lineHandle = handle; gesture.current = g; return; }
+        if (!line.placed) {
+          line.b = p; line.placed = true;
+          line.stroke.moveLine(line.a, line.b);
+          g.lineHandle = "b"; gesture.current = g;
+          return;
+        }
+        e.finishLine();
+      }
+      if (p.x < 0 || p.y < 0 || p.x >= doc.width || p.y >= doc.height) return;
+      e.lineEdit = { stroke: new PaintStroke(e, p), a: p, b: p, placed: false };
+      g.lineHandle = "b"; g.fresh = true; gesture.current = g;
       e.emit();
       return;
     }
@@ -572,7 +612,17 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       return;
     }
     if (g.kind === "paint") {
-      g.stroke!.draw(e.tool === "line" && ev.shiftKey ? snapAngle(g.start, p) : p);
+      g.stroke!.draw(p);
+      return;
+    }
+    if (g.kind === "line") {
+      const line = e.lineEdit;
+      if (!line || (g.fresh && Math.hypot(p.x - g.start.x, p.y - g.start.y) * zoom < 4)) return;
+      // Dragging right after the first press draws the line in one gesture.
+      if (g.fresh) line.placed = true;
+      const handle = g.lineHandle ?? "b";
+      line[handle] = ev.shiftKey ? snapAngle(handle === "a" ? line.b : line.a, p) : p;
+      line.stroke.moveLine(line.a, line.b);
       return;
     }
     if (g.kind === "selection-frame") {
@@ -618,7 +668,8 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
   function up() {
     const g = gesture.current;
     gesture.current = null;
-    if (!g) return;
+    // Panning must not end an unfinished polygon or an editable line.
+    if (!g || g.kind === "pan" || g.kind === "line") return;
     if (g.kind === "move-pending" || (g.kind === "transform" && g.selectOnClick)) {
       if (g.kind === "transform" && g.outsideFrame) {
         e.clearCanvasSelection();
@@ -738,6 +789,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
           onContextMenu={(ev) => {ev.preventDefault();e.openIslandMenu(ev.clientX,ev.clientY,doc ? hitIsland({...doc,islands:e.visibleIslands},point(ev)) : -1);}}
         />
         <div className="brush-footprint" ref={brushCursor} aria-hidden="true" data-testid="brush-footprint" />
+        <div className="clone-source" ref={cloneMarker} aria-hidden="true" data-testid="clone-source" />
         <LayersDock />
         {!doc && (
           <div className="empty-canvas">

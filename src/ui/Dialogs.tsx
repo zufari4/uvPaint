@@ -113,8 +113,10 @@ export function HelpDialog({ close }: { close: () => void }) {
           </dd>
           <dt>Paint</dt>
           <dd>
-            B brush · N line (Shift snaps to 45°) · E eraser · G fill · I eyedropper
-            <br />S clone stamp, Alt-click to set source · [ / ] brush size
+            B brush · N line · E eraser · G fill · I eyedropper
+            <br />
+            Line: click two points or drag, drag the end points to adjust, Enter applies, Esc cancels, Shift snaps to 45°
+            <br />S clone stamp, Alt-click to set source; the source then moves with the brush · [ / ] brush size
             <br />
             F resizes the brush: move the mouse, click or Enter applies, Esc / right-click cancels
             <br />

@@ -1,6 +1,6 @@
 {
   "name": "uvpaint",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Base color texture studio with UV guides and live 3D preview",
   "author": "UV Paint",
@@ -26,6 +26,7 @@
     "test:fill": "node scripts/regression-fill.mjs",
     "test:filter": "node scripts/regression-filter.mjs",
     "test:line": "node scripts/regression-line.mjs",
+    "test:tools": "node scripts/regression-tools.mjs",
     "test:layers-panel": "node scripts/regression-layers-panel.mjs",
     "test:project": "node scripts/regression-project.mjs",
     "test:recent": "node scripts/regression-recent.mjs",

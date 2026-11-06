@@ -11,6 +11,18 @@ if (!app.commandLine.hasSwitch("user-data-dir")) app.setPath("userData", join(ap
 app.whenReady().then(async () => {
   const recentProjects = new RecentProjects(join(app.getPath("userData"), "recent-projects.json"));
   await recentProjects.load();
+  // Dialogs reopen in the folder last used for the same kind of file, across restarts.
+  const folderFile = join(app.getPath("userData"), "dialog-folders.json");
+  let folders: Record<string, unknown> = {};
+  try { folders = JSON.parse(await readFile(folderFile, "utf8")); } catch { /* first launch */ }
+  const inFolder = (kind: string, name?: string) => {
+    const dir = typeof folders[kind] === "string" ? folders[kind] as string : undefined;
+    return dir ? (name ? join(dir, name) : dir) : name;
+  };
+  const rememberFolder = async (kind: string, file: string) => {
+    folders[kind] = dirname(file);
+    try { await writeFile(folderFile, JSON.stringify(folders)); } catch { /* keep the session value */ }
+  };
   // The default Electron Edit menu routes Ctrl+Z to Chromium's text history.
   // The application has its own menu and document-level keyboard shortcuts.
   Menu.setApplicationMenu(null);
@@ -49,6 +61,7 @@ app.whenReady().then(async () => {
     if (kind !== "model" && kind !== "image" && kind !== "project")
       throw new Error("Invalid file type");
     const result = await dialog.showOpenDialog(win, {
+      defaultPath: inFolder(kind),
       properties: ["openFile"],
       filters:
         kind === "model"
@@ -62,6 +75,7 @@ app.whenReady().then(async () => {
     });
     if (result.canceled) return null;
     const file = result.filePaths[0];
+    await rememberFolder(kind, file);
     if (kind === "model") win.webContents.send("model:reading", basename(file));
     const bytes = new Uint8Array(await readFile(file));
     const handle = kind === "project" ? randomUUID() : undefined;
@@ -116,10 +130,11 @@ app.whenReady().then(async () => {
         ? basename(name).replace(/[<>:"/\\|?*]/g, "_")
         : "texture.png";
     const result = await dialog.showSaveDialog(win, {
-      defaultPath: safe,
+      defaultPath: inFolder("png", safe),
       filters: [{ name: "PNG texture", extensions: ["png"] }],
     });
     if (result.canceled || !result.filePath) return null;
+    await rememberFolder("png", result.filePath);
     await writeFile(result.filePath, bytes);
     return result.filePath;
   });
@@ -133,11 +148,12 @@ app.whenReady().then(async () => {
     if (!target) {
       const safe = typeof name === "string" ? basename(name).replace(/[<>:\"/\\|?*]/g, "_") : "Project.uvpaint";
       const result = await dialog.showSaveDialog(win, {
-        defaultPath: safe.toLowerCase().endsWith(".uvpaint") ? safe : `${safe}.uvpaint`,
+        defaultPath: inFolder("project", safe.toLowerCase().endsWith(".uvpaint") ? safe : `${safe}.uvpaint`),
         filters: [{ name: "uvPaint project", extensions: ["uvpaint"] }],
       });
       if (result.canceled || !result.filePath) return null;
       target = result.filePath;
+      await rememberFolder("project", target);
     }
     // Replace only after a complete write; a failed save preserves the previous project.
     const temporary = join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`);

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zufari4/uvPaint/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/release-v1.0.0-6bd9c0" alt="Release v1.0.0" /></a>
+  <a href="https://github.com/zufari4/uvPaint/releases/tag/v1.0.1"><img src="https://img.shields.io/badge/release-v1.0.1-6bd9c0" alt="Release v1.0.1" /></a>
   <a href="https://www.npmjs.com/package/uvpaint"><img src="https://img.shields.io/npm/v/uvpaint?color=cb3837" alt="npm package" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%20x64-4a535e" alt="Windows x64" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f2c230" alt="MIT license" /></a>
@@ -51,7 +51,7 @@ Sliders update the 2D texture and the 3D model while you drag them; the whole im
 
 ## 🚀 Getting started
 
-1. ⬇️ Download **[uvPaint-Setup-1.0.0.exe](https://github.com/zufari4/uvPaint/releases/download/v1.0.0/uvPaint-Setup-1.0.0.exe)** from the [Releases](https://github.com/zufari4/uvPaint/releases/tag/v1.0.0) page and run it. The installer is not code-signed yet: if SmartScreen appears, choose **More info → Run anyway**.
+1. ⬇️ Download **[uvPaint-Setup-1.0.1.exe](https://github.com/zufari4/uvPaint/releases/download/v1.0.1/uvPaint-Setup-1.0.1.exe)** from the [Releases](https://github.com/zufari4/uvPaint/releases/tag/v1.0.1) page and run it. The installer is not code-signed yet: if SmartScreen appears, choose **More info → Run anyway**.
 2. Start **uvPaint** from the Start menu or the desktop shortcut.
 3. Open a GLB (**Ctrl+O**) or try the built-in sample, pick a material and start painting.
 
@@ -75,7 +75,7 @@ Requires Node.js 18+; npm downloads the Electron runtime during installation. Up
 | Brush · line · eraser · fill · eyedropper · clone | **B** · **N** · **E** · **G** · **I** · **S** |
 | Resize brush under the cursor | **F**, move, click (**Esc** cancels) |
 | Brush size / opacity | **[** **]** / **1–9**, **0** |
-| Straight line snapping | **Shift** while drawing a line |
+| Straight line | **N**: click two points or drag, drag end points to adjust, **Enter** applies, **Shift** snaps to 45° |
 | Select all / deselect / invert | **Ctrl+A** / **Ctrl+D** / **Ctrl+Shift+I** |
 | Copy · cut · paste · to new layer · extract | **Ctrl+C** · **Ctrl+X** · **Ctrl+V** · **Ctrl+J** · **Ctrl+Shift+J** |
 | Apply / cancel transform | **Enter** / **Esc** |
@@ -93,7 +93,9 @@ Shortcuts use physical keys, so they also work with a Russian keyboard layout.
 - 🫥 **Hide or isolate islands** from the right-click menu — this only changes the view, never the pixels.
 - 🪣 **Fill** on a UV-mapped texture fills the whole island under the cursor.
 - 📌 New and pasted layers appear right above the selected layer.
-- 🧱 Drag the Layers panel by its top strip to any corner of the texture view.
+- 🧱 Drag the Layers panel by its top strip to any corner of the texture view, or collapse it to a side tab with the **»** button.
+- 🎚️ Every tool remembers its own opacity; brush and eraser also have a **Hardness** setting for soft edges.
+- 🧷 The clone stamp keeps its offset between strokes: after Alt-click the source marker travels with the brush.
 
 ## 🛠️ Building from source
 
@@ -105,7 +107,7 @@ npm run dev        # Vite + Electron with hot reload
 npm run build      # type-check and compile
 npm run dist       # build release/current/win-unpacked/uvPaint.exe
 npm run pack:npm   # stage the npm package in dist-npm/
-npm run dist:installer  # build release/current/uvPaint-Setup-1.0.0.exe
+npm run dist:installer  # build release/current/uvPaint-Setup-1.0.1.exe
 npm test           # unit tests
 ```
 

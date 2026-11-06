@@ -16,7 +16,7 @@ try {
   const screen=(x,y)=>[b.x+(b.width-100*zoom)/2+x*zoom,b.y+(b.height-100*zoom)/2+y*zoom];
   await page.mouse.move(...screen(10,20));await page.mouse.down();
   await page.mouse.move(...screen(60,80),{steps:4});await page.mouse.move(...screen(90,22),{steps:4});
-  await page.mouse.up();
+  await page.mouse.up();await page.keyboard.press('Enter');
   const line=await page.evaluate(()=>{const e=window.__e,d=e.layer.canvas.getContext('2d');const a=(x,y)=>d.getImageData(x,y,1,1).data[3];
     return {mid:a(50,21),detour:a(45,60),undo:e.history.undoStack.at(-1)?.label};});
   assert.ok(line.mid>200,'line passes through the midpoint');
@@ -26,7 +26,7 @@ try {
   await page.keyboard.down('Shift');
   await page.mouse.move(...screen(10,50));await page.mouse.down();
   await page.mouse.move(...screen(80,53),{steps:4});await page.mouse.up();
-  await page.keyboard.up('Shift');
+  await page.keyboard.up('Shift');await page.keyboard.press('Enter');
   const snapped=await page.evaluate(()=>{const d=window.__e.layer.canvas.getContext('2d');return [d.getImageData(78,50,1,1).data[3],d.getImageData(78,53,1,1).data[3]];});
   assert.ok(snapped[0]>200&&snapped[1]===0,'Shift snaps the line to horizontal');
   console.log('PASS Shift snaps lines to 45° steps');
