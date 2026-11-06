@@ -11,6 +11,7 @@ import { traceIslands, hitIsland } from "../tools/uv";
 import { traceGuides } from "../tools/uv-guides";
 import { PaintStroke } from "../tools/paint";
 import { hitShape, rotateAround, shapeFrame, shapePivot } from "../tools/shape-geometry";
+import { fontString, lineHeight, measureText } from "../tools/text";
 import { TextureVisibility } from "../render/texture-visibility";
 import { LayersDock } from "./LayersDock";
 import {
@@ -80,6 +81,10 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
   const [space, setSpace] = useState(false);
   const gesture = useRef<Gesture | null>(null);
   const brushCursor = useRef<HTMLDivElement>(null);
+  const textInput = useRef<HTMLTextAreaElement>(null);
+  const editedText = e.tool === "text" ? e.lineEdit : null;
+  // A new text box takes the keyboard right away.
+  useEffect(() => { textInput.current?.focus({ preventScroll: true }); }, [editedText]);
   const cloneMarker = useRef<HTMLDivElement>(null);
   const cursorPoint = useRef<Point | null>(null);
   // Blender-style F resize: the ring is centred left of the pointer so the pointer starts on its edge.
@@ -533,6 +538,13 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
         ctx.stroke();
         ctx.restore();
       }
+      if (e.lineEdit.text !== undefined) {
+        const box = measureText(e.textOptions, e.lineEdit.text || " ");
+        ctx.save();
+        ctx.setLineDash([4 / zoom, 4 / zoom]);
+        ctx.strokeRect(a.x, a.y, Math.max(box.width, e.textOptions.size / 2), box.height);
+        ctx.restore();
+      } else
       for (const q of placed ? [a, b] : [a]) {
         ctx.fillRect(q.x - 5 / zoom, q.y - 5 / zoom, 10 / zoom, 10 / zoom);
         ctx.strokeRect(q.x - 5 / zoom, q.y - 5 / zoom, 10 / zoom, 10 / zoom);
@@ -544,6 +556,11 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
   }, [e.revision, size, zoom, pan, path, selectionPreview]);
   /** Body (move) or surrounding ring (rotate) of the shape that is still being edited. */
   function hitLineShape(line: NonNullable<typeof e.lineEdit>, p: Point) {
+    if (line.text !== undefined) {
+      const box = measureText(e.textOptions, line.text || " "), slack = 4 / zoom;
+      return p.x >= line.a.x - slack && p.y >= line.a.y - slack && p.x <= line.a.x + Math.max(box.width, e.textOptions.size / 2) + slack &&
+        p.y <= line.a.y + box.height + slack ? "body" : null;
+    }
     const gradient = e.tool === "gradient", kind = gradient ? "line" : e.shape.kind;
     const width = gradient ? 0 : kind === "line" ? e.brushSize : e.shape.width;
     return hitShape(kind, line.a, line.b, line.angle, p, Math.max(width / 2, 6 / zoom), 24 / zoom);
@@ -636,6 +653,23 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       e.emit();
       return;
     }
+    if (e.tool === "text") {
+      if (!e.layer) {
+        e.fail("Select a layer or add an empty layer before adding text.");
+        return;
+      }
+      const line = e.lineEdit;
+      if (line?.text !== undefined && hitLineShape(line, p)) {
+        g.kind = "line";
+        g.shapeDrag = { mode: "move", a: { ...line.a }, b: { ...line.b }, angle: 0 };
+        gesture.current = g;
+        return;
+      }
+      e.finishLine();
+      e.lineEdit = { stroke: new PaintStroke(e, p), a: p, b: p, placed: true, angle: 0, text: "" };
+      e.emit();
+      return;
+    }
     if (e.tool === "line" || e.tool === "gradient") {
       if (!e.layer) {
         e.fail("Select a layer or add an empty layer before painting.");
@@ -705,7 +739,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       if (selectionTool && selectionBox && !e.transform && !polygon.current.length) {
         const handle = hitSelectionHandle(selectionBox, p, zoom);
         ev.currentTarget.style.cursor = handle < 0 ? "" : selectionCursors[handle];
-      } else if ((e.tool === "line" || e.tool === "gradient") && e.lineEdit) {
+      } else if ((e.tool === "line" || e.tool === "gradient" || e.tool === "text") && e.lineEdit) {
         const { a, b, placed } = e.lineEdit;
         const near = (q: Point) => Math.hypot(q.x - p.x, q.y - p.y) * zoom <= 8;
         const hit = placed ? hitLineShape(e.lineEdit, p) : null;
@@ -820,6 +854,8 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     setPath([...g.points]);
   }
   function up() {
+    // Pressing on the canvas moved the keyboard focus away from the text being typed.
+    if (e.tool === "text") textInput.current?.focus({ preventScroll: true });
     const g = gesture.current;
     gesture.current = null;
     // Panning must not end an unfinished polygon or an editable line.
@@ -943,6 +979,32 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
           onContextMenu={(ev) => {ev.preventDefault();e.openIslandMenu(ev.clientX,ev.clientY,doc ? hitIsland({...doc,islands:e.visibleIslands},point(ev)) : -1);}}
         />
         <div className="brush-footprint" ref={brushCursor} aria-hidden="true" data-testid="brush-footprint" />
+        {e.tool === "text" && e.lineEdit?.text !== undefined && (() => {
+          const o = e.textOptions, box = measureText(o, e.lineEdit.text || " ");
+          return (
+            <textarea
+              ref={textInput}
+              className="text-entry"
+              aria-label="Text"
+              spellCheck={false}
+              value={e.lineEdit.text}
+              style={{
+                left: origin.x + e.lineEdit.a.x * zoom,
+                top: origin.y + e.lineEdit.a.y * zoom,
+                width: (box.width + o.size) * zoom,
+                height: box.height * zoom + 2,
+                font: fontString(o, o.size * zoom),
+                lineHeight: `${lineHeight(o) * zoom}px`,
+                textAlign: o.align,
+              }}
+              onChange={(ev) => e.setEditedText(ev.target.value)}
+              onKeyDown={(ev) => {
+                if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); e.cancelLine(); }
+                else if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); ev.stopPropagation(); e.finishLine(); }
+              }}
+            />
+          );
+        })()}
         <div className="clone-source" ref={cloneMarker} aria-hidden="true" data-testid="clone-source" />
         <LayersDock />
         {!doc && (

@@ -131,6 +131,7 @@ export function useShortcuts() {
         w: "wand",
         b: "brush",
         n: "line",
+        t: "text",
         e: "eraser",
         i: "eyedropper",
         s: "clone",

@@ -11,10 +11,16 @@ import {
   SquareDashed,
   SquarePlus,
   SquareMinus,
+  Bold,
+  Italic,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
 } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
 import { ColorButton } from "./ColorPicker";
+import { availableFonts } from "../tools/text";
 export function OptionsBar() {
   const e = useEditor();
   // Typed values wait for Set; otherwise the fields follow the frame while it is dragged.
@@ -49,6 +55,7 @@ export function OptionsBar() {
             eraser: "Eraser",
             fill: "Fill",
             gradient: e.gradient === "radial" ? "Radial gradient" : "Linear gradient",
+            text: "Text",
             eyedropper: "Eyedropper",
             clone: "Clone stamp",
             island: "UV islands",
@@ -142,6 +149,59 @@ export function OptionsBar() {
             />{" "}
             Contiguous
           </label>
+        </>
+      )}
+      {e.tool === "text" && (
+        <>
+          <select aria-label="Font" title="Font" value={e.textOptions.font}
+            style={{ fontFamily: `"${e.textOptions.font}"` }}
+            onChange={(ev) => e.setTextOptions({ font: ev.target.value })}>
+            {[...new Set([e.textOptions.font, ...availableFonts()])].map((font) => (
+              <option key={font} value={font} style={{ fontFamily: `"${font}"` }}>{font}</option>
+            ))}
+          </select>
+          <label title="Font size in texture pixels">
+            <input aria-label="Font size" type="number" min="1" max="2000" value={e.textOptions.size}
+              onChange={(ev) => e.setTextOptions({ size: Math.max(1, Math.min(2000, +ev.target.value || 1)) })} />{" "}
+            px
+          </label>
+          <div className="selection-modes" role="group" aria-label="Text style">
+            <Button title="Bold" active={e.textOptions.bold} aria-pressed={e.textOptions.bold}
+              onClick={() => e.setTextOptions({ bold: !e.textOptions.bold })}><Bold size={14} /></Button>
+            <Button title="Italic" active={e.textOptions.italic} aria-pressed={e.textOptions.italic}
+              onClick={() => e.setTextOptions({ italic: !e.textOptions.italic })}><Italic size={14} /></Button>
+          </div>
+          <div className="selection-modes" role="group" aria-label="Text alignment">
+            {([["left", AlignLeft], ["center", AlignCenter], ["right", AlignRight]] as const).map(([align, Icon]) => (
+              <Button key={align} title={`Align ${align}`} active={e.textOptions.align === align} aria-pressed={e.textOptions.align === align}
+                onClick={() => e.setTextOptions({ align })}><Icon size={14} /></Button>
+            ))}
+          </div>
+          <ColorButton label="Text color" title="Text color (primary)" color={e.color} alpha={e.colorAlpha}
+            onChange={(color, alpha) => e.setColor("primary", color, alpha)} />
+          <label title="Outline in the secondary color">
+            <input type="checkbox" aria-label="Text outline" checked={e.textOptions.outline}
+              onChange={(ev) => e.setTextOptions({ outline: ev.target.checked })} />{" "}
+            Outline
+          </label>
+          <ColorButton label="Text outline color" title="Outline color (secondary)" color={e.backgroundColor} alpha={e.backgroundAlpha}
+            onChange={(color, alpha) => e.setColor("secondary", color, alpha)} />
+          <label title="Outline width">
+            <input aria-label="Text outline width" type="number" min="1" max="200" value={e.textOptions.outlineWidth}
+              disabled={!e.textOptions.outline}
+              onChange={(ev) => e.setTextOptions({ outlineWidth: Math.max(1, Math.min(200, +ev.target.value || 1)) })} />{" "}
+            px
+          </label>
+          <label title="Anti-aliasing">
+            AA{" "}
+            <select aria-label="Anti-aliasing" value={e.textOptions.antialias}
+              onChange={(ev) => e.setTextOptions({ antialias: ev.target.value as typeof e.textOptions.antialias })}>
+              <option value="none">None</option>
+              <option value="sharp">Sharp</option>
+              <option value="smooth">Smooth</option>
+            </select>
+          </label>
+          <span className="options-hint">Click to place text · drag the text to move it · Ctrl+Enter applies · Esc cancels</span>
         </>
       )}
       {e.tool === "gradient" && (

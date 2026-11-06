@@ -483,6 +483,22 @@ select {
   height: 100%;
   touch-action: none;
 }
+.cursor-text { cursor: text; }
+.text-entry {
+  position: absolute;
+  z-index: 2;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+  background: transparent;
+  color: transparent;
+  caret-color: #9ce8d6;
+  pointer-events: none;
+}
 .cursor-pan {
   cursor: grab;
 }

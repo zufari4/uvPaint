@@ -250,7 +250,7 @@ export async function decodeProject(bytes: Uint8Array, checkSize: (w: number, h:
     }));
     requireValue(["studio", "unlit"].includes(manifest.previewMode) && typeof manifest.previewEdges === "boolean", "invalid preview settings.");
     const paint = manifest.paint;
-    requireValue(record(paint) && ["move", "rect", "lasso", "polygon", "wand", "brush", "line", "eraser", "fill", "gradient", "eyedropper", "clone", "island", "pan"].includes(paint.tool) &&
+    requireValue(record(paint) && ["move", "rect", "lasso", "polygon", "wand", "brush", "line", "eraser", "fill", "gradient", "text", "eyedropper", "clone", "island", "pan"].includes(paint.tool) &&
       text(paint.color) && /^#[0-9a-f]{6}$/i.test(paint.color) && text(paint.backgroundColor) && /^#[0-9a-f]{6}$/i.test(paint.backgroundColor) &&
       finite(paint.brushSize) && paint.brushSize >= 1 && finite(paint.brushOpacity) && paint.brushOpacity >= 0 && paint.brushOpacity <= 1 &&
       (paint.backgroundAlpha === undefined || (finite(paint.backgroundAlpha) && paint.backgroundAlpha >= 0 && paint.backgroundAlpha <= 1)) &&

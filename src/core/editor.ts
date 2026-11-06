@@ -33,6 +33,7 @@ import { faceKey } from "../tools/uv-guides";
 import { sourceGeometry } from "../render/mesh-source";
 import { encodeProject, decodeProject } from "./project";
 import type { PaintStroke } from "../tools/paint";
+import { defaultTextOptions, type TextOptions } from "../tools/text";
 
 const insertAboveActive = (d: TextureDocument, layer: Layer) => {
   const index = d.layers.findIndex((l) => l.id === d.activeId);
@@ -62,6 +63,7 @@ export class Editor {
   gradient: "linear" | "radial" = "linear";
   /** The fill/gradient group remembers its last tool for the button and the G key. */
   fillTool: "fill" | "gradient" = "fill";
+  textOptions: TextOptions = { ...defaultTextOptions };
   private lineStyle = "";
   tolerance = 24;
   contiguous = true;
@@ -90,8 +92,8 @@ export class Editor {
   cloneSource: Point | null = null;
   /** Offset from the clone source to the paint point, kept between strokes (aligned clone). */
   cloneOffset: Point | null = null;
-  /** A placed but not yet applied line whose end points can still be dragged. */
-  lineEdit: { stroke: PaintStroke; a: Point; b: Point; placed: boolean; angle: number } | null = null;
+  /** A placed but not yet applied line, shape, gradient or text (`text` is set for the text tool). */
+  lineEdit: { stroke: PaintStroke; a: Point; b: Point; placed: boolean; angle: number; text?: string } | null = null;
   private compositor = new LayerCompositor();
   private warmTimer = 0;
   message = "Open a GLB to start, or create a texture.";
@@ -125,6 +127,13 @@ export class Editor {
       if (typeof shape.width === "number" && shape.width >= 1 && shape.width <= 1000) this.shape.width = shape.width;
       if (saved?.gradient === "linear" || saved?.gradient === "radial") this.gradient = saved.gradient;
       if (saved?.fillTool === "fill" || saved?.fillTool === "gradient") this.fillTool = saved.fillTool;
+      const text = saved?.text ?? {};
+      if (typeof text.font === "string" && text.font) this.textOptions.font = text.font;
+      if (typeof text.size === "number" && text.size >= 1 && text.size <= 2000) this.textOptions.size = text.size;
+      if (typeof text.outlineWidth === "number" && text.outlineWidth >= 1 && text.outlineWidth <= 200) this.textOptions.outlineWidth = text.outlineWidth;
+      for (const key of ["bold", "italic", "outline"] as const) if (typeof text[key] === "boolean") this.textOptions[key] = text[key];
+      if (["left", "center", "right"].includes(text.align)) this.textOptions.align = text.align;
+      if (["none", "sharp", "smooth"].includes(text.antialias)) this.textOptions.antialias = text.antialias;
     } catch { /* defaults */ }
   }
   /** Eraser and clone always work at full strength; other tools use the primary color's alpha. */
@@ -149,8 +158,19 @@ export class Editor {
     this.emit();
   }
   private saveToolOptions() {
-    try { localStorage.setItem(toolOptionsKey, JSON.stringify({ hardness: this.toolHardness, shape: this.shape, gradient: this.gradient, fillTool: this.fillTool })); }
+    try { localStorage.setItem(toolOptionsKey, JSON.stringify({ hardness: this.toolHardness, shape: this.shape, gradient: this.gradient, fillTool: this.fillTool, text: this.textOptions })); }
     catch { /* session-only options */ }
+  }
+  setTextOptions(patch: Partial<TextOptions>) {
+    this.textOptions = { ...this.textOptions, ...patch };
+    this.saveToolOptions();
+    this.emit();
+  }
+  /** Updates the text that is still being typed. */
+  setEditedText(text: string) {
+    if (this.lineEdit?.text === undefined) return;
+    this.lineEdit.text = text;
+    this.emit();
   }
   setGradient(kind: "linear" | "radial") {
     this.gradient = kind;
@@ -281,7 +301,8 @@ export class Editor {
   emit(pixels = false, interactive = false, region?: Region) {
     // A shape that is still editable follows color, size, opacity and shape option changes.
     if (!pixels && this.lineEdit) {
-      const style = JSON.stringify([this.color, this.backgroundColor, this.colorAlpha, this.backgroundAlpha, this.brushSize, this.shape, this.gradient]);
+      const style = JSON.stringify([this.color, this.backgroundColor, this.colorAlpha, this.backgroundAlpha, this.brushSize, this.shape, this.gradient,
+        this.textOptions, this.lineEdit.text]);
       if (style !== this.lineStyle) {
         this.lineStyle = style;
         this.lineEdit.stroke.moveLine(this.lineEdit.a, this.lineEdit.b, this.lineEdit.angle);
@@ -1414,7 +1435,9 @@ export class Editor {
     const line = this.lineEdit;
     if (!line) return;
     this.lineEdit = null;
-    line.stroke.finish();
+    // Empty text leaves nothing to apply.
+    if (line.text !== undefined && !line.text.trim()) line.stroke.cancel();
+    else line.stroke.finish();
   }
   cancelLine() {
     const line = this.lineEdit;

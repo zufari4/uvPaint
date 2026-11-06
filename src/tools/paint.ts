@@ -8,6 +8,7 @@ import {
 import { snapshot } from "../core/history";
 import { editingMask } from "./uv";
 import { shapeFrame } from "./shape-geometry";
+import { drawText, textBounds } from "./text";
 const rgba = (hex: string, alpha: number) =>
   `rgba(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(",")},${alpha})`;
 export class PaintStroke {
@@ -43,7 +44,7 @@ export class PaintStroke {
       throw new Error(
         "The active layer opacity is 0%. Increase it before painting.",
       );
-    if (editor.brushOpacity === 0 && editor.tool !== "gradient" && !(editor.tool === "line" && editor.shape.kind !== "line"))
+    if (editor.brushOpacity === 0 && editor.tool !== "gradient" && editor.tool !== "text" && !(editor.tool === "line" && editor.shape.kind !== "line"))
       throw new Error("The paint color is fully transparent. Raise its alpha to paint.");
     if (d.restrict && !d.islands.length && !layer.uvBinding)
       throw new Error(
@@ -60,7 +61,7 @@ export class PaintStroke {
     context(this.working).drawImage(this.base, 0, 0);
     this.clipped = canvas(d.width, d.height, false);
     // Shapes and the eraser on island-linked layers also reach pixels beyond the island; the layer mask hides them.
-    this.clip = (editor.tool === "line" || editor.tool === "eraser") && layer.uvBinding ? d.selection ?? null : editingMask(d);
+    this.clip = (editor.tool === "line" || editor.tool === "text" || editor.tool === "eraser") && layer.uvBinding ? d.selection ?? null : editingMask(d);
     this.last = this.start = p;
     this.tool = editor.tool;
     this.clone = this.tool === "clone" ? this.base : null;
@@ -78,9 +79,16 @@ export class PaintStroke {
     const e = this.editor,
       ctx = context(this.ink);
     // Shapes and gradients redraw completely from the press point on every move.
-    const from = this.tool === "line" || this.tool === "gradient" ? this.start : this.last;
+    const editable = this.tool === "line" || this.tool === "gradient" || this.tool === "text";
+    const from = editable ? this.start : this.last;
     let box = { left: Math.min(from.x, p.x), top: Math.min(from.y, p.y), right: Math.max(from.x, p.x), bottom: Math.max(from.y, p.y) };
-    if (this.tool === "gradient") {
+    if (this.tool === "text") {
+      const text = e.lineEdit?.stroke === this ? e.lineEdit.text ?? "" : "";
+      ctx.clearRect(0, 0, this.ink.width, this.ink.height);
+      drawText(ctx, e.textOptions, text, from, { color: e.color, alpha: e.colorAlpha }, { color: e.backgroundColor, alpha: e.backgroundAlpha });
+      const b = textBounds(e.textOptions, text, from);
+      box = { left: b.x, top: b.y, right: b.x + b.width, bottom: b.y + b.height };
+    } else if (this.tool === "gradient") {
       const { width: w, height: h } = this.ink, r = Math.hypot(p.x - from.x, p.y - from.y);
       ctx.clearRect(0, 0, w, h);
       if (r > 0) {
@@ -183,7 +191,7 @@ export class PaintStroke {
         right: Math.max(this.dirty.right, old.right), bottom: Math.max(this.dirty.bottom, old.bottom),
       } : old;
     }
-    if (this.tool === "line" || this.tool === "gradient") this.lineBounds = bounds;
+    if (editable) this.lineBounds = bounds;
     if (bounds.right > bounds.left && bounds.bottom > bounds.top) {
       const old = this.dirty;
       this.dirty = old ? {
@@ -221,7 +229,7 @@ export class PaintStroke {
     const x = context(this.working);
     x.clearRect(left, top, w, h);
     draw(x, this.base);
-    x.globalAlpha = this.tool === "gradient" || (this.tool === "line" && e.shape.kind !== "line") ? 1 : e.brushOpacity;
+    x.globalAlpha = this.tool === "gradient" || this.tool === "text" || (this.tool === "line" && e.shape.kind !== "line") ? 1 : e.brushOpacity;
     x.globalCompositeOperation =
       this.tool === "eraser" ? "destination-out" : "source-over";
     draw(x, this.clipped);
@@ -238,6 +246,8 @@ export class PaintStroke {
         ? "Erase"
         : this.tool === "clone"
           ? "Clone stamp"
+          : this.tool === "text"
+            ? "Text"
           : this.tool === "gradient"
             ? this.editor.gradient === "radial" ? "Radial gradient" : "Linear gradient"
           : this.tool === "line"

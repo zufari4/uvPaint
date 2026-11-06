@@ -78,6 +78,7 @@ Requires Node.js 18+; npm downloads the Electron runtime during installation. Up
 | Straight line | **N**: click two points or drag, drag end points to adjust, **Enter** applies, **Shift** snaps to 45° |
 | Shapes | Hold or right-click the line button to pick a rectangle, ellipse or regular polygon; choose fill (primary color) and outline (secondary color) in the options bar, **Shift** draws squares and circles; before **Enter**, drag inside to move the shape and just outside to rotate it (**Shift** / **Ctrl** snap) |
 | Gradient | Hold or right-click the fill button (or **Shift+G**) for linear and radial gradients from the primary to the secondary color; drag the end points to adjust, **Enter** applies |
+| Text | **T**: click to place and type; font, size, bold / italic, alignment, outline (secondary color) and anti-aliasing (None / Sharp / Smooth) in the options bar; drag to move, **Ctrl+Enter** applies |
 | Select all / deselect / invert | **Ctrl+A** / **Ctrl+D** / **Ctrl+Shift+I** |
 | Copy · cut · paste · to new layer · extract | **Ctrl+C** · **Ctrl+X** · **Ctrl+V** · **Ctrl+J** · **Ctrl+Shift+J** |
 | Apply / cancel transform | **Enter** / **Esc** |

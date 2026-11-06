@@ -121,6 +121,7 @@ export function HelpDialog({ close }: { close: () => void }) {
             <br />Shapes: hold or right-click the line button to pick a rectangle, ellipse or regular polygon; fill uses the primary color, the outline the secondary one; Shift draws squares and circles
             <br />While a shape is editable: drag inside to move it (Shift keeps one axis, Ctrl 10 px steps), just outside to rotate (Shift 15°, Ctrl 5°), Ctrl snaps end points to a 10 px grid
             <br />Gradient: hold or right-click the fill button (Shift+G switches); drag from start to end, primary to secondary color, Enter applies
+            <br />T text: click to place, type (Enter adds a line), drag the text to move it, Ctrl+Enter applies, Esc cancels; font, size, bold/italic, alignment, outline and anti-aliasing in the options bar
             <br />S clone stamp, Alt-click to set source; the source then moves with the brush · [ / ] brush size
             <br />
             F resizes the brush: move the mouse, click or Enter applies, Esc / right-click cancels

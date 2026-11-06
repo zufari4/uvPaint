@@ -15,6 +15,7 @@ import {
   Square,
   Circle,
   Hexagon,
+  Type,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import type { ShapeKind, Tool } from "../types";
@@ -53,6 +54,7 @@ const items: [Tool, Icon, string][] = [
   ["wand", WandSparkles, "Magic wand (W)"],
   ["brush", Paintbrush, "Brush (B)"],
   ["line", Slash, "Line (N)"],
+  ["text", Type, "Text (T)"],
   ["eraser", Eraser, "Eraser (E)"],
   ["fill", PaintBucket, "Fill (G)"],
   ["eyedropper", Pipette, "Eyedropper (I)"],
@@ -67,7 +69,7 @@ export function ToolRail() {
   const [, FillIcon, fillName] = fills.find(([kind]) => kind === fillKind) ?? fills[0];
   return (
     <aside className="tool-rail">
-      {items.map(([tool, Icon, title], i) => tool === "line" ? (
+      {items.map(([tool, Icon, title]) => tool === "line" ? (
         <ToolGroup key={tool} className="tool-shapes" menuLabel="Shapes" Icon={ShapeIcon}
           title={`${shapeName} (N) · hold or right-click for shapes · Shift constrains`}
           active={e.tool === "line"} onClick={() => e.setTool("line")}
@@ -84,7 +86,7 @@ export function ToolRail() {
               e.setTool(kind === "fill" ? "fill" : "gradient");
             } }))} />
       ) : (
-        <div className={i === 5 || i === 11 ? "tool-separator" : ""} key={tool}>
+        <div className={tool === "brush" || tool === "island" ? "tool-separator" : ""} key={tool}>
           <Button
             title={title}
             active={e.tool === tool}
