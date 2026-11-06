@@ -118,7 +118,11 @@ function ToolGroup({ className, menuLabel, Icon, title, active, onClick, options
   useEffect(() => {
     if (!flyout) return;
     const close = (ev: Event) => {
-      if (ev instanceof KeyboardEvent ? ev.key === "Escape" : !slot.current?.contains(ev.target as Node)) setFlyout(false);
+      if (ev instanceof KeyboardEvent) {
+        if (ev.key !== "Escape") return;
+        ev.preventDefault();
+        setFlyout(false);
+      } else if (!slot.current?.contains(ev.target as Node)) setFlyout(false);
     };
     document.addEventListener("pointerdown", close, true);
     document.addEventListener("keydown", close, true);

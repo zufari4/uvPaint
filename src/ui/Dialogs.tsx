@@ -102,6 +102,8 @@ export function HelpDialog({ close }: { close: () => void }) {
             <br />
             V: click selects an island and linked layer · Drag moves the image
             <br />
+            Esc (with nothing to cancel), Show all layers or an empty click with V / U leaves the island focus
+            <br />
             Shift unlocks proportions / snaps rotation / moves along one axis · Alt from center
             <br />
             Ctrl snaps rotation to 5° and movement to 10 texture pixels

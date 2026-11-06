@@ -245,6 +245,8 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       }
       if (ev.key === "Enter" && polygon.current.length) finishPolygon();
       if (ev.key === "Escape") {
+        // With nothing to cancel, Escape leaves the island focus and shows every layer.
+        const idle = !polygon.current.length && !gesture.current && !e.lineEdit && !e.transform && !e.pickingLayerIsland;
         polygon.current = [];
         setPath([]);
         if (gesture.current?.kind === "selection-frame" || gesture.current?.kind === "move-pending") {
@@ -256,6 +258,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
           gesture.current = null;
         }
         e.cancelLine();
+        if (idle) e.releaseFocus();
       }
     };
     const up = (ev: KeyboardEvent) => {
@@ -565,8 +568,6 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       gesture.current = g;
       return;
     }
-    if (ev.button === 0 && e.tool !== "move" && e.tool !== "line" && e.tool !== "gradient" && !e.transform && e.textureIsolated &&
-      hitIsland({ ...doc, islands: e.visibleIslands }, p) < 0) e.releaseFocus();
     if (selectionTool && doc.selection && selectionBox && !e.transform && !polygon.current.length) {
       const handle = hitSelectionHandle(selectionBox, p, zoom);
       if (handle >= 0) {

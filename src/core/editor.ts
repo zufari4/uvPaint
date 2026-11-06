@@ -1422,7 +1422,7 @@ export class Editor {
     this.lineEdit = null;
     line.stroke.cancel();
   }
-  /** Clicks on empty canvas end the island focus and show every layer again. */
+  /** Ends the island focus and shows every layer again (Escape, or an empty click with Move or UV islands). */
   releaseFocus() {
     if (!this.textureFocusEnabled && !this.doc?.selectedIslands.length) return;
     this.textureFocusEnabled = false;

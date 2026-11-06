@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 const server=await createServer();await server.listen();
 const env={...process.env,UVPAINT_DEV_URL:"http://127.0.0.1:5173"};delete env.ELECTRON_RUN_AS_NODE;
 const app=await electron.launch({args:[".",`--user-data-dir=${process.cwd()}/test-results/islands-profile`],env});
+// A test must never block on a native file dialog.
+await app.evaluate(({dialog})=>{const none=async()=>({canceled:true,filePaths:[],filePath:undefined});dialog.showOpenDialog=none;dialog.showSaveDialog=none;});
 const ok=(v,label)=>{assert.ok(v,label);console.log("PASS",label);};
 try {
   const page=await app.firstWindow(),errors=[];
@@ -24,7 +26,10 @@ try {
   ok(await page.locator('.header-actions [title^="Open GLB"],.header-actions [title^="Export PNG"]').count()===0,"File commands are absent from the header");
   await page.getByTitle("Application menu",{exact:true}).click();
   ok(await page.getByRole("menuitem",{name:"Export PNG",exact:true}).isDisabled(),"PNG export is disabled without a document");
-  await page.keyboard.press("ArrowDown");await page.keyboard.press("ArrowDown");await page.keyboard.press("Enter");
+  // Walk up from the end of the menu so new file items never land the keyboard on a native Open dialog.
+  await page.keyboard.press("End");
+  for(let i=0;i<10&&!(await page.evaluate(()=>document.activeElement?.textContent?.trim()==="Settings"));i++) await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Enter");
   await page.getByLabel("UV display mode").waitFor();
   ok(await page.getByLabel("UV display mode").locator("option").count()===4,"UV display modes live in Settings with keyboard menu navigation");
   for(const mode of ["quads","triangles","outline","off"]){

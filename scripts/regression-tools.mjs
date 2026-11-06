@@ -99,16 +99,26 @@ try {
   });
   check(diff<=2,`Cached preview equals the full composite (max channel difference ${diff})`);
 
-  // Blank click with any tool ends the island focus.
+  // Painting and selecting beyond the island keep the island focus; Escape or the options button leave it.
   const focus=await page.evaluate(()=>{
     const face={meshId:'m',triangle:0,vertices:[],normal:[0,0,1]};
     const square=(id,x0,x1)=>({id,triangles:[[{x:x0,y:.1},{x:x1,y:.1},{x:x1,y:.9}],[{x:x0,y:.1},{x:x1,y:.9},{x:x0,y:.9}]],faces:[face,face]});
-    e.doc.islands=[square(0,.05,.3),square(1,.6,.95)];e.setLayerIsland(1);e.selectLayer(e.layer.id);e.setTool('brush');return e.textureIsolated;
+    e.doc.islands=[square(0,.05,.3),square(1,.6,.95)];e.setLayerIsland(1);e.selectLayer(e.layer.id);e.setTool('eraser');return e.textureIsolated;
   });
   await page.getByTitle('Fit canvas',{exact:true}).click();
   const b2=await page.getByTestId('texture-canvas').boundingBox(),z2=Math.min((b2.width-100)/64,(b2.height-100)/64);
-  await page.mouse.click(b2.x+(b2.width-64*z2)/2+29*z2,b2.y+(b2.height-64*z2)/2+32*z2);
-  check(focus&&await page.evaluate(()=>!e.textureIsolated),'Clicking empty space with the brush shows all layers again');
+  const blank=[b2.x+(b2.width-64*z2)/2+29*z2,b2.y+(b2.height-64*z2)/2+32*z2];
+  await page.mouse.click(...blank);
+  const erased=await page.evaluate(()=>e.textureIsolated);
+  await page.keyboard.press('m');
+  await page.mouse.move(...blank);await page.mouse.down();await page.mouse.move(blank[0]+40,blank[1]+30,{steps:3});await page.mouse.up();
+  const selected=await page.evaluate(()=>e.textureIsolated&&!!e.doc.selection);
+  check(focus&&erased&&selected,'Erasing or selecting beyond the island keeps the island focus');
+  await page.keyboard.press('Escape');
+  check(await page.evaluate(()=>!e.textureIsolated),'Escape with nothing to cancel shows all layers');
+  await page.evaluate(()=>{e.deselect();e.setLayerIsland(1);});
+  await page.getByRole('button',{name:'Show all layers (Esc)'}).click();
+  check(await page.evaluate(()=>!e.textureIsolated),'The options bar button shows all layers');
 
   // Collapsible Layers panel.
   await page.getByTitle('Collapse layers panel',{exact:true}).click();
