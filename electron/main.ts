@@ -4,6 +4,7 @@ import { basename, dirname, join, isAbsolute, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { freemem } from "node:os";
 import { RecentProjects } from "./recent-projects";
+import { systemFonts } from "./system-fonts";
 let win: BrowserWindow;
 const projectFiles = new Map<string, string>();
 const projectPage = "https://github.com/zufari4/uvPaint";
@@ -102,6 +103,10 @@ app.whenReady().then(async () => {
     const data = await response.json() as { tag_name?: unknown; html_url?: unknown };
     const url = typeof data.html_url === "string" && data.html_url.startsWith(projectPage) ? data.html_url : `${projectPage}/releases/latest`;
     return { version: String(data.tag_name ?? "").replace(/^v/, ""), url };
+  });
+  ipcMain.handle("app:system-fonts", async (event) => {
+    validate(event);
+    return systemFonts();
   });
   ipcMain.handle("app:open-project-page", async (event, url) => {
     validate(event);

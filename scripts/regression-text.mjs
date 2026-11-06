@@ -10,7 +10,7 @@ try {
   await page.evaluate(async()=>{
     window.__e=(await import('/src/core/editor.ts')).editor;const e=window.__e;
     await e.newCanvas(200,100);e.addEmpty();e.setColor('primary','#ff0000',1);e.setColor('secondary','#0000ff',1);
-    e.setTextOptions({font:'Arial',size:40,bold:false,italic:false,align:'left',outline:false,outlineWidth:3,antialias:'smooth'});
+    e.setTextOptions({font:'Arial',size:40,bold:false,italic:false,underline:false,spacing:0,angle:0,align:'left',outline:false,outlineWidth:3,antialias:'smooth'});
   });
   await page.keyboard.press('t');
   assert.equal(await page.evaluate(()=>window.__e.tool),'text');
@@ -75,5 +75,48 @@ try {
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('uvpaint.toolOptions')).text.bold),true,'text options are remembered');
   assert.ok((await page.getByLabel('Font',{exact:true}).locator('option').count())>3,'installed fonts are offered');
   console.log('PASS Empty text is ignored and text options persist');
+
+  const builtin=await page.evaluate(async()=>(await import('/src/tools/text.ts')).textFonts);
+  await page.waitForFunction(n=>document.querySelectorAll('select[aria-label="Font"] option').length>n,builtin.length);
+  const fontNames=await page.getByLabel('Font',{exact:true}).locator('option').allTextContents();
+  assert.ok(fontNames.some(f=>!builtin.includes(f)),'fonts installed on the system are listed, not only the built-in set');
+  await page.evaluate(()=>window.__e.setTool('brush'));
+  const brushBar=(await page.locator('.options-bar').boundingBox()).height;
+  await page.evaluate(()=>window.__e.setTool('text'));
+  assert.ok((await page.locator('.options-bar').boundingBox()).height<=brushBar+1,'text options fit into the usual options bar height');
+  console.log('PASS System fonts are offered and the options bar keeps its height');
+
+  await page.getByTitle('Bold',{exact:true}).click();
+  await page.getByLabel('Text outline',{exact:true}).uncheck();
+  await page.getByLabel('Font size',{exact:true}).fill('40');
+  await page.evaluate(()=>window.__e.addEmpty());
+  await page.mouse.click(...screen(10,10));
+  await page.keyboard.type('abcdef');
+  // Opaque pixels in the rows just below the letters, where the underline goes.
+  const strip=async()=>{const top=await page.evaluate(()=>Math.round(window.__e.lineEdit.a.y+24+40*0.32));return (await pixels(0,top-1,200,4)).filter((v,i)=>i%4===3&&v>200).length;};
+  const plain=await strip();
+  await page.getByTitle('Underline',{exact:true}).click();
+  assert.ok(await strip()>plain+40,'underline draws a line under the text being edited');
+  const frame=()=>page.evaluate(async()=>{const {textFrame}=await import('/src/tools/text.ts');const e=window.__e;return textFrame(e.textOptions,e.lineEdit.text,e.lineEdit.a);});
+  const narrow=(await frame()).width;
+  await page.getByLabel('Letter spacing',{exact:true}).fill('10');
+  assert.ok(Math.abs((await frame()).width-narrow-60)<2,'letter spacing widens the text by the spacing per character');
+  await page.getByLabel('Letter spacing',{exact:true}).fill('0');
+  await page.getByLabel('Text rotation',{exact:true}).fill('90');
+  const extent=await page.evaluate(()=>{const d=window.__e.layer.canvas.getContext('2d').getImageData(0,0,200,100).data;let x0=200,x1=0,y0=100,y1=0;
+    for(let i=3;i<d.length;i+=4)if(d[i]>0){const x=(i>>2)%200,y=(i>>2)/200|0;x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);}return {w:x1-x0,h:y1-y0};});
+  assert.ok(extent.h>extent.w*1.4,`rotation turns the text upright (${JSON.stringify(extent)})`);
+  await page.getByLabel('Text rotation',{exact:true}).fill('0');
+  const f=await frame();
+  const ring=[f.corners[1].x+12/zoom,f.center.y],below=[f.center.x+3,f.center.y+f.width];
+  await page.getByLabel('Text',{exact:true}).focus();
+  await page.keyboard.down('Shift');
+  await page.mouse.move(...screen(...ring));await page.mouse.down();await page.mouse.move(...screen(...below),{steps:6});await page.mouse.up();
+  await page.keyboard.up('Shift');
+  assert.equal(await page.evaluate(()=>window.__e.textOptions.angle),90,'dragging just outside the text rotates it; Shift snaps to 15°');
+  await page.keyboard.press('Control+Enter');
+  assert.equal(await page.evaluate(()=>window.__e.history.undoStack.at(-1)?.label),'Text');
+  await page.evaluate(()=>window.__e.setTextOptions({angle:0,underline:false}));
+  console.log('PASS Underline, letter spacing and rotation');
   assert.deepEqual(errors,[]);
 } finally {await app.close();await server.close();}

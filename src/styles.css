@@ -1367,7 +1367,9 @@ button.preview-expand:focus-visible {
 }
 .options-bar select {
   max-width: 250px;
+  padding: 3px 6px;
 }
+.options-bar .font-select { max-width: calc(120px * var(--ui-text-scale, 1.4)); }
 .options-hint {
   margin-left: 0;
 }

@@ -11,7 +11,7 @@ import { traceIslands, hitIsland } from "../tools/uv";
 import { traceGuides } from "../tools/uv-guides";
 import { PaintStroke } from "../tools/paint";
 import { hitShape, rotateAround, shapeFrame, shapePivot } from "../tools/shape-geometry";
-import { fontString, lineHeight, measureText } from "../tools/text";
+import { fontString, hitText, lineHeight, textFrame } from "../tools/text";
 import { TextureVisibility } from "../render/texture-visibility";
 import { LayersDock } from "./LayersDock";
 import {
@@ -539,10 +539,12 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
         ctx.restore();
       }
       if (e.lineEdit.text !== undefined) {
-        const box = measureText(e.textOptions, e.lineEdit.text || " ");
         ctx.save();
         ctx.setLineDash([4 / zoom, 4 / zoom]);
-        ctx.strokeRect(a.x, a.y, Math.max(box.width, e.textOptions.size / 2), box.height);
+        ctx.beginPath();
+        for (const q of textFrame(e.textOptions, e.lineEdit.text, a).corners) ctx.lineTo(q.x, q.y);
+        ctx.closePath();
+        ctx.stroke();
         ctx.restore();
       } else
       for (const q of placed ? [a, b] : [a]) {
@@ -556,11 +558,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
   }, [e.revision, size, zoom, pan, path, selectionPreview]);
   /** Body (move) or surrounding ring (rotate) of the shape that is still being edited. */
   function hitLineShape(line: NonNullable<typeof e.lineEdit>, p: Point) {
-    if (line.text !== undefined) {
-      const box = measureText(e.textOptions, line.text || " "), slack = 4 / zoom;
-      return p.x >= line.a.x - slack && p.y >= line.a.y - slack && p.x <= line.a.x + Math.max(box.width, e.textOptions.size / 2) + slack &&
-        p.y <= line.a.y + box.height + slack ? "body" : null;
-    }
+    if (line.text !== undefined) return hitText(e.textOptions, line.text, line.a, p, 4 / zoom, 24 / zoom);
     const gradient = e.tool === "gradient", kind = gradient ? "line" : e.shape.kind;
     const width = gradient ? 0 : kind === "line" ? e.brushSize : e.shape.width;
     return hitShape(kind, line.a, line.b, line.angle, p, Math.max(width / 2, 6 / zoom), 24 / zoom);
@@ -658,10 +656,10 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
         e.fail("Select a layer or add an empty layer before adding text.");
         return;
       }
-      const line = e.lineEdit;
-      if (line?.text !== undefined && hitLineShape(line, p)) {
+      const line = e.lineEdit, hit = line?.text !== undefined ? hitLineShape(line, p) : null;
+      if (line && hit) {
         g.kind = "line";
-        g.shapeDrag = { mode: "move", a: { ...line.a }, b: { ...line.b }, angle: 0 };
+        g.shapeDrag = { mode: hit === "body" ? "move" : "rotate", a: { ...line.a }, b: { ...line.b }, angle: e.textOptions.angle };
         gesture.current = g;
         return;
       }
@@ -787,6 +785,14 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
           if (ctrl) { dx = Math.round(dx / 10) * 10; dy = Math.round(dy / 10) * 10; }
           line.a = { x: s.a.x + dx, y: s.a.y + dy };
           line.b = { x: s.b.x + dx, y: s.b.y + dy };
+        } else if (line.text !== undefined) {
+          // Text turns about the centre of its block; the angle is a text option shown in the options bar.
+          const c = textFrame(e.textOptions, line.text, line.a).center;
+          let degrees = s.angle + ((Math.atan2(p.y - c.y, p.x - c.x) - Math.atan2(g.start.y - c.y, g.start.x - c.x)) * 180) / Math.PI;
+          const step = ctrl ? 5 : ev.shiftKey ? 15 : 0;
+          if (step) degrees = Math.round(degrees / step) * step;
+          e.setTextOptions({ angle: Math.round(((((degrees + 180) % 360) + 360) % 360 - 180) * 10) / 10 });
+          return;
         } else {
           const c = shapePivot(kind, s.a, s.b);
           let delta = Math.atan2(p.y - c.y, p.x - c.x) - Math.atan2(g.start.y - c.y, g.start.x - c.x);
@@ -980,7 +986,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
         />
         <div className="brush-footprint" ref={brushCursor} aria-hidden="true" data-testid="brush-footprint" />
         {e.tool === "text" && e.lineEdit?.text !== undefined && (() => {
-          const o = e.textOptions, box = measureText(o, e.lineEdit.text || " ");
+          const o = e.textOptions, frame = textFrame(o, e.lineEdit.text, e.lineEdit.a);
           return (
             <textarea
               ref={textInput}
@@ -991,11 +997,15 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
               style={{
                 left: origin.x + e.lineEdit.a.x * zoom,
                 top: origin.y + e.lineEdit.a.y * zoom,
-                width: (box.width + o.size) * zoom,
-                height: box.height * zoom + 2,
+                // Left-aligned text gets room for the next character; centred text must keep the exact width to line up.
+                width: (frame.width + (o.align === "left" ? o.size : 0)) * zoom + 2,
+                height: frame.height * zoom + 2,
                 font: fontString(o, o.size * zoom),
+                letterSpacing: `${o.spacing * zoom}px`,
                 lineHeight: `${lineHeight(o) * zoom}px`,
                 textAlign: o.align,
+                transformOrigin: `${(frame.width / 2) * zoom}px ${(frame.height / 2) * zoom}px`,
+                transform: `rotate(${o.angle}deg)`,
               }}
               onChange={(ev) => e.setEditedText(ev.target.value)}
               onKeyDown={(ev) => {

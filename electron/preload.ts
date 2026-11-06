@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke("file:save-project", bytes, name, handle),
   memory: () => ipcRenderer.invoke("system:memory"),
   latestRelease: () => ipcRenderer.invoke("app:latest-release"),
+  systemFonts: () => ipcRenderer.invoke("app:system-fonts"),
   openProjectPage: (url: string) => ipcRenderer.invoke("app:open-project-page", url),
   windowState: () => ipcRenderer.invoke("window:state"),
   windowAction: (action: "minimize" | "maximize" | "close") =>

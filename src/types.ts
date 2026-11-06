@@ -134,6 +134,7 @@ declare global {
       saveProject(bytes: Uint8Array, name: string, handle?: string): Promise<{ name: string; handle: string } | null>;
       memory(): Promise<number>;
       latestRelease(): Promise<{ version: string; url: string }>;
+      systemFonts(): Promise<string[]>;
       openProjectPage(url: string): Promise<void>;
       windowState(): Promise<{ maximized: boolean }>;
       windowAction(action: "minimize" | "maximize" | "close"): Promise<void>;

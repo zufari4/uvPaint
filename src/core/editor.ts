@@ -131,7 +131,8 @@ export class Editor {
       if (typeof text.font === "string" && text.font) this.textOptions.font = text.font;
       if (typeof text.size === "number" && text.size >= 1 && text.size <= 2000) this.textOptions.size = text.size;
       if (typeof text.outlineWidth === "number" && text.outlineWidth >= 1 && text.outlineWidth <= 200) this.textOptions.outlineWidth = text.outlineWidth;
-      for (const key of ["bold", "italic", "outline"] as const) if (typeof text[key] === "boolean") this.textOptions[key] = text[key];
+      for (const key of ["bold", "italic", "underline", "outline"] as const) if (typeof text[key] === "boolean") this.textOptions[key] = text[key];
+      if (typeof text.spacing === "number" && Math.abs(text.spacing) <= 500) this.textOptions.spacing = text.spacing;
       if (["left", "center", "right"].includes(text.align)) this.textOptions.align = text.align;
       if (["none", "sharp", "smooth"].includes(text.antialias)) this.textOptions.antialias = text.antialias;
     } catch { /* defaults */ }

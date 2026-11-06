@@ -16,6 +16,8 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  Underline,
+  MoveHorizontal,
 } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
@@ -39,10 +41,15 @@ export function OptionsBar() {
   const setSy = (h: number) => edit(linked ? { h, w: Math.round(h / shown.ratio) } : { h });
   const setAngle = (value: number) => edit({ angle: value });
   useEffect(() => setDraft(null), [e.transform]);
+  const [fonts, setFonts] = useState<string[]>([]);
+  useEffect(() => {
+    if (e.tool === "text" && !fonts.length) void availableFonts().then(setFonts);
+  }, [e.tool]);
   const selection = ["rect", "lasso", "polygon", "wand"].includes(e.tool);
   return (
     <div className="options-bar">
-      <span className="tool-name">
+      <span className="tool-name" title={e.tool === "text"
+        ? "Click to place text · drag it to move, just outside to rotate · Enter adds a line · Ctrl+Enter applies · Esc cancels" : undefined}>
         {
           {
             move: "Transform",
@@ -72,7 +79,7 @@ export function OptionsBar() {
           Clear selection
         </Button>
       )}
-      {!selection && (e.layer?.uvBinding || (e.tool !== "move" && (e.doc?.restrict || (e.tool === "fill" && !!e.doc?.islands.length)))) && (
+      {!selection && e.tool !== "text" && (e.layer?.uvBinding || (e.tool !== "move" && (e.doc?.restrict || (e.tool === "fill" && !!e.doc?.islands.length)))) && (
         <span className="options-hint">
           {e.tool === "fill" && e.doc?.islands.length ? "Fill: island under cursor" : `UV clipping: ${e.layer?.uvBinding ? `Island ${String(e.layer.uvBinding.island.id + 1).padStart(2, "0")}` : `${e.doc?.selectedIslands.length || "all"} islands`}`}
         </span>
@@ -153,10 +160,10 @@ export function OptionsBar() {
       )}
       {e.tool === "text" && (
         <>
-          <select aria-label="Font" title="Font" value={e.textOptions.font}
+          <select aria-label="Font" title="Font" className="font-select" value={e.textOptions.font}
             style={{ fontFamily: `"${e.textOptions.font}"` }}
             onChange={(ev) => e.setTextOptions({ font: ev.target.value })}>
-            {[...new Set([e.textOptions.font, ...availableFonts()])].map((font) => (
+            {[...new Set([e.textOptions.font, ...fonts])].map((font) => (
               <option key={font} value={font} style={{ fontFamily: `"${font}"` }}>{font}</option>
             ))}
           </select>
@@ -170,6 +177,8 @@ export function OptionsBar() {
               onClick={() => e.setTextOptions({ bold: !e.textOptions.bold })}><Bold size={14} /></Button>
             <Button title="Italic" active={e.textOptions.italic} aria-pressed={e.textOptions.italic}
               onClick={() => e.setTextOptions({ italic: !e.textOptions.italic })}><Italic size={14} /></Button>
+            <Button title="Underline" active={e.textOptions.underline} aria-pressed={e.textOptions.underline}
+              onClick={() => e.setTextOptions({ underline: !e.textOptions.underline })}><Underline size={14} /></Button>
           </div>
           <div className="selection-modes" role="group" aria-label="Text alignment">
             {([["left", AlignLeft], ["center", AlignCenter], ["right", AlignRight]] as const).map(([align, Icon]) => (
@@ -177,6 +186,17 @@ export function OptionsBar() {
                 onClick={() => e.setTextOptions({ align })}><Icon size={14} /></Button>
             ))}
           </div>
+          <label title="Letter spacing in texture pixels">
+            <MoveHorizontal size={13} />
+            <input aria-label="Letter spacing" type="number" min="-500" max="500" value={e.textOptions.spacing}
+              onChange={(ev) => e.setTextOptions({ spacing: Math.max(-500, Math.min(500, +ev.target.value || 0)) })} />
+          </label>
+          <label title="Rotation in degrees · or drag just outside the text (Shift 15°, Ctrl 5°)">
+            <RotateCw size={12} />
+            <input aria-label="Text rotation" type="number" min="-180" max="180" value={e.textOptions.angle}
+              onChange={(ev) => e.setTextOptions({ angle: Math.max(-180, Math.min(180, +ev.target.value || 0)) })} />
+            °
+          </label>
           <ColorButton label="Text color" title="Text color (primary)" color={e.color} alpha={e.colorAlpha}
             onChange={(color, alpha) => e.setColor("primary", color, alpha)} />
           <label title="Outline in the secondary color">
@@ -201,7 +221,6 @@ export function OptionsBar() {
               <option value="smooth">Smooth</option>
             </select>
           </label>
-          <span className="options-hint">Click to place text · drag the text to move it · Ctrl+Enter applies · Esc cancels</span>
         </>
       )}
       {e.tool === "gradient" && (
