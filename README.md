@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zufari4/uvPaint/releases/tag/v1.0.1"><img src="https://img.shields.io/badge/release-v1.0.1-6bd9c0" alt="Release v1.0.1" /></a>
+  <a href="https://github.com/zufari4/uvPaint/releases/tag/v1.0.2"><img src="https://img.shields.io/badge/release-v1.0.2-6bd9c0" alt="Release v1.0.2" /></a>
   <a href="https://www.npmjs.com/package/uvpaint"><img src="https://img.shields.io/npm/v/uvpaint?color=cb3837" alt="npm package" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%20x64-4a535e" alt="Windows x64" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f2c230" alt="MIT license" /></a>
@@ -51,7 +51,7 @@ Sliders update the 2D texture and the 3D model while you drag them; the whole im
 
 ## 🚀 Getting started
 
-1. ⬇️ Download **[uvPaint-Setup-1.0.1.exe](https://github.com/zufari4/uvPaint/releases/download/v1.0.1/uvPaint-Setup-1.0.1.exe)** from the [Releases](https://github.com/zufari4/uvPaint/releases/tag/v1.0.1) page and run it. The installer is not code-signed yet: if SmartScreen appears, choose **More info → Run anyway**.
+1. ⬇️ Download **[uvPaint-Setup-1.0.2.exe](https://github.com/zufari4/uvPaint/releases/download/v1.0.2/uvPaint-Setup-1.0.2.exe)** from the [Releases](https://github.com/zufari4/uvPaint/releases/tag/v1.0.2) page and run it. The installer is not code-signed yet: if SmartScreen appears, choose **More info → Run anyway**.
 2. Start **uvPaint** from the Start menu or the desktop shortcut.
 3. Open a GLB (**Ctrl+O**) or try the built-in sample, pick a material and start painting.
 
@@ -107,7 +107,7 @@ npm run dev        # Vite + Electron with hot reload
 npm run build      # type-check and compile
 npm run dist       # build release/current/win-unpacked/uvPaint.exe
 npm run pack:npm   # stage the npm package in dist-npm/
-npm run dist:installer  # build release/current/uvPaint-Setup-1.0.1.exe
+npm run dist:installer  # build release/current/uvPaint-Setup-1.0.2.exe
 npm test           # unit tests
 ```
 
