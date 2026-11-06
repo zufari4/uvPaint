@@ -59,8 +59,8 @@ export class PaintStroke {
     this.working = canvas(d.width, d.height, false);
     context(this.working).drawImage(this.base, 0, 0);
     this.clipped = canvas(d.width, d.height, false);
-    // Shapes on island-linked layers keep their pixels beyond the island; the layer mask hides them.
-    this.clip = editor.tool === "line" && layer.uvBinding ? d.selection ?? null : editingMask(d);
+    // Shapes and the eraser on island-linked layers also reach pixels beyond the island; the layer mask hides them.
+    this.clip = (editor.tool === "line" || editor.tool === "eraser") && layer.uvBinding ? d.selection ?? null : editingMask(d);
     this.last = this.start = p;
     this.tool = editor.tool;
     this.clone = this.tool === "clone" ? this.base : null;

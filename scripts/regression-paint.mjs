@@ -48,6 +48,10 @@ try {
     e.setLayerIsland(0);e.doc.selection=canvas(2048,2048);context(e.doc.selection).fillStyle='#fff';context(e.doc.selection).fillRect(0,500,2048,100);
     const clipped=new PaintStroke(e,{x:900,y:550});clipped.draw({x:1100,y:550});clipped.draw({x:900,y:650});clipped.finish();
     ok(pixel(e.layer.canvas,950,550)[1]===255&&pixel(e.layer.canvas,1050,550)[3]===0&&pixel(e.layer.canvas,950,625)[3]===0,'Painting obeys both the bound UV island and pixel selection');
+    e.doc.selection=null;context(e.layer.canvas).fillStyle='#ff0000';context(e.layer.canvas).fillRect(800,800,600,100);
+    e.tool='eraser';const rub=new PaintStroke(e,{x:900,y:850});rub.draw({x:1300,y:850});rub.finish();
+    ok(pixel(e.layer.canvas,950,850)[3]===0&&pixel(e.layer.canvas,1250,850)[3]===0&&pixel(e.layer.canvas,1250,880)[3]===255,
+      'The eraser also clears pixels beyond the linked island');
     await e.sample();await e.newCanvas(2048,2048);e.tool='brush';e.brushOpacity=1;
     const slot=e.model.slots.find(s=>s.id===e.activeId);const live=new PaintStroke(e,{x:500,y:500});await frame();
     ok(slot.texture.image.width===512,'3D preview uses a smaller texture during the stroke');live.finish();

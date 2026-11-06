@@ -319,10 +319,20 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     if (layer?.visible && e.transform) outside = e.transform.outside;
     else if (layer?.visible && layer.uvMask && e.textureIsolated) {
       const cached = outsideCache.current;
-      // An edited shape changes the layer canvas in place, so it is re-masked on every redraw.
-      const revision = e.lineEdit ? e.pixelsRevision : 0;
-      if (cached?.source !== layer.canvas || cached.mask !== layer.uvMask || cached.revision !== revision)
+      // Shapes and the eraser change the layer canvas in place, so it is re-masked on every redraw.
+      const live = !!e.lineEdit || (gesture.current?.kind === "paint" && e.tool === "eraser");
+      const revision = live ? e.pixelsRevision : 0;
+      if (cached?.source !== layer.canvas || cached.mask !== layer.uvMask)
         outsideCache.current = { source: layer.canvas, mask: layer.uvMask, revision, outside: masked(layer.canvas, layer.uvMask, true) };
+      else if (cached.revision !== revision) {
+        const o = context(cached.outside);
+        o.clearRect(0, 0, cached.outside.width, cached.outside.height);
+        o.drawImage(layer.canvas, 0, 0);
+        o.globalCompositeOperation = "destination-out";
+        o.drawImage(layer.uvMask, 0, 0);
+        o.globalCompositeOperation = "source-over";
+        cached.revision = revision;
+      }
       outside = outsideCache.current!.outside;
     }
     // Pixels beyond the island stay faintly visible, except where the user hid faces manually.
@@ -711,7 +721,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
         );
         ev.currentTarget.style.cursor =
           hit.action === "rotate"
-            ? "crosshair"
+            ? rotateCursor
             : hit.action === "scale"
               ? transformResizeCursor(e.transform.points, hit.handle)
               : hit.action === "distort"
