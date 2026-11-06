@@ -230,7 +230,7 @@ export async function decodeProject(bytes: Uint8Array, checkSize: (w: number, h:
         (layers.length ? layers.some(l => l.id === saved.activeId) : saved.activeId === ""), "invalid active layer.");
       documents.push({ id, name: saved.name, width: saved.width, height: saved.height, layers, activeId: saved.activeId,
         selection: await image(saved.selection, saved.width, saved.height), uvSet: saved.uvSet, islands, selectedIslands: saved.selectedIslands,
-        restrict: saved.restrict, alphaMode: saved.alphaMode, alphaCutoff: saved.alphaCutoff, uvNames: saved.uvNames,
+        restrict: false, alphaMode: saved.alphaMode, alphaCutoff: saved.alphaCutoff, uvNames: saved.uvNames,
         sourceIndex: saved.sourceIndex, textureUsage: saved.textureUsage, textureName: saved.textureName });
     }
     requireValue(Array.isArray(manifest.openDocuments) && manifest.openDocuments.every(i => int(i) && i < documents.length) &&

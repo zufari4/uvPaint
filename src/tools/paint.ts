@@ -72,22 +72,44 @@ export class PaintStroke {
     if (this.ended) return;
     const e = this.editor,
       ctx = context(this.ink);
-    // A line redraws its whole segment from the press point on every move.
+    // A shape redraws completely from the press point on every move.
     const from = this.tool === "line" ? this.start : this.last;
+    let box = { left: Math.min(from.x, p.x), top: Math.min(from.y, p.y), right: Math.max(from.x, p.x), bottom: Math.max(from.y, p.y) };
     if (this.tool === "line") {
+      const shape = e.shape;
       ctx.clearRect(0, 0, this.ink.width, this.ink.height);
       ctx.save();
       ctx.fillStyle = ctx.strokeStyle = e.color;
+      ctx.lineWidth = e.brushSize;
+      ctx.lineCap = "round";
       ctx.beginPath();
       if (from.x === p.x && from.y === p.y) {
         ctx.arc(p.x, p.y, e.brushSize / 2, 0, Math.PI * 2);
         ctx.fill();
-      } else {
-        ctx.lineCap = "round";
-        ctx.lineWidth = e.brushSize;
+      } else if (shape.kind === "line") {
         ctx.moveTo(from.x, from.y);
         ctx.lineTo(p.x, p.y);
         ctx.stroke();
+      } else {
+        if (shape.kind === "rect") ctx.rect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+        else if (shape.kind === "ellipse")
+          ctx.ellipse((box.left + box.right) / 2, (box.top + box.bottom) / 2, (box.right - box.left) / 2, (box.bottom - box.top) / 2, 0, 0, Math.PI * 2);
+        else {
+          // Regular polygon: the first point is the centre, the second one a vertex.
+          const r = Math.hypot(p.x - from.x, p.y - from.y), start = Math.atan2(p.y - from.y, p.x - from.x);
+          for (let i = 0; i < shape.sides; i++) {
+            const a = start + (i * Math.PI * 2) / shape.sides;
+            ctx.lineTo(from.x + Math.cos(a) * r, from.y + Math.sin(a) * r);
+          }
+          ctx.closePath();
+          box = { left: from.x - r, top: from.y - r, right: from.x + r, bottom: from.y + r };
+        }
+        ctx.lineJoin = "miter";
+        if (shape.fill !== "none") {
+          ctx.fillStyle = shape.fill === "primary" ? e.color : e.backgroundColor;
+          ctx.fill();
+        }
+        if (shape.outline || shape.fill === "none") ctx.stroke();
       }
       ctx.restore();
     } else {
@@ -117,12 +139,13 @@ export class PaintStroke {
         ctx.restore();
       }
     }
-    const pad = e.brushSize / 2 + 2;
+    // Miter joins reach beyond half the outline width at shape corners.
+    const pad = e.brushSize * (this.tool === "line" && e.shape.kind !== "line" ? 2 : 0.5) + 2;
     const bounds = {
-      left: Math.max(0, Math.floor(Math.min(from.x, p.x) - pad)),
-      top: Math.max(0, Math.floor(Math.min(from.y, p.y) - pad)),
-      right: Math.min(this.base.width, Math.ceil(Math.max(from.x, p.x) + pad)),
-      bottom: Math.min(this.base.height, Math.ceil(Math.max(from.y, p.y) + pad)),
+      left: Math.max(0, Math.floor(box.left - pad)),
+      top: Math.max(0, Math.floor(box.top - pad)),
+      right: Math.min(this.base.width, Math.ceil(box.right + pad)),
+      bottom: Math.min(this.base.height, Math.ceil(box.bottom + pad)),
     };
     if (this.lineBounds) {
       const old = this.lineBounds;
@@ -186,7 +209,7 @@ export class PaintStroke {
         : this.tool === "clone"
           ? "Clone stamp"
           : this.tool === "line"
-            ? "Line"
+            ? { line: "Line", rect: "Rectangle", ellipse: "Ellipse", polygon: "Polygon" }[this.editor.shape.kind]
             : "Brush stroke",
       this.before,
     );

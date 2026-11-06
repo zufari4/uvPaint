@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointer } from "react";
 import { ImagePlus, Maximize, Minimize2, Maximize2, Minus, Plus } from "lucide-react";
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
-import type { Point, SelectionMode } from "../types";
+import type { Point, SelectionMode, ShapeKind } from "../types";
 import { canvas, context, masked } from "../core/canvas";
 import { polygonMask } from "../tools/selection";
 import { selectionBounds, selectionHandles, selectionCursors, hitSelectionHandle, dragSelectionBounds, transformSelection, type SelectionBounds } from "../tools/selection-frame";
@@ -43,11 +43,18 @@ type Gesture = {
   zoom: number;
 };
 const sizeTools = ["brush", "line", "eraser", "clone"];
-const snapAngle = (from: Point, to: Point) => {
+const snapAngle = (from: Point, to: Point, step = Math.PI / 4) => {
   const dx = to.x - from.x, dy = to.y - from.y;
-  const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+  const angle = Math.round(Math.atan2(dy, dx) / step) * step;
   const length = dx * Math.cos(angle) + dy * Math.sin(angle);
   return { x: from.x + Math.cos(angle) * length, y: from.y + Math.sin(angle) * length };
+};
+/** Shift: lines snap to 45°, rectangles and ellipses become squares and circles, polygons rotate in 15° steps. */
+const constrainShape = (kind: ShapeKind, from: Point, to: Point): Point => {
+  if (kind === "line") return snapAngle(from, to);
+  if (kind === "polygon") return snapAngle(from, to, Math.PI / 12);
+  const side = Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y));
+  return { x: from.x + Math.sign(to.x - from.x || 1) * side, y: from.y + Math.sign(to.y - from.y || 1) * side };
 };
 export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean; onToggleExpand: () => void }) {
   const e = useEditor(),
@@ -139,6 +146,25 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     x: (size.w - (doc?.width ?? 0) * zoom) / 2 + pan.x,
     y: (size.h - (doc?.height ?? 0) * zoom) / 2 + pan.y,
   };
+  // Selecting a layer brings its linked island into view when it lies (partly) outside the view.
+  const shownLayer = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const layer = e.layer, previous = shownLayer.current;
+    shownLayer.current = layer?.id;
+    if (!doc || !layer || previous === undefined || previous === layer.id) return;
+    const binding = layer.uvBinding;
+    if (!binding || binding.uvSet !== doc.uvSet || !binding.island.triangles.length) return;
+    const points = binding.island.triangles.flat();
+    const x0 = Math.min(...points.map((p) => p.x)) * doc.width, x1 = Math.max(...points.map((p) => p.x)) * doc.width;
+    const y0 = Math.min(...points.map((p) => p.y)) * doc.height, y1 = Math.max(...points.map((p) => p.y)) * doc.height;
+    const margin = 24;
+    const inside = origin.x + x0 * zoom >= margin && origin.x + x1 * zoom <= size.w - margin &&
+      origin.y + y0 * zoom >= margin && origin.y + y1 * zoom <= size.h - margin;
+    if (inside) return;
+    const z = Math.min(zoom, (size.w - margin * 4) / Math.max(1, x1 - x0), (size.h - margin * 4) / Math.max(1, y1 - y0));
+    setZoom(z);
+    setPan({ x: (doc.width / 2 - (x0 + x1) / 2) * z, y: (doc.height / 2 - (y0 + y1) / 2) * z });
+  }, [e.layer?.id]);
   function point(event: { clientX: number; clientY: number }) {
     const r = host.current!.getBoundingClientRect();
     return {
@@ -626,6 +652,10 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       if (selectionTool && selectionBox && !e.transform && !polygon.current.length) {
         const handle = hitSelectionHandle(selectionBox, p, zoom);
         ev.currentTarget.style.cursor = handle < 0 ? "" : selectionCursors[handle];
+      } else if (e.tool === "line" && e.lineEdit) {
+        const { a, b, placed } = e.lineEdit;
+        const near = (q: Point) => Math.hypot(q.x - p.x, q.y - p.y) * zoom <= 8;
+        ev.currentTarget.style.cursor = placed && (near(a) || near(b)) ? "move" : "";
       } else if (e.transform) {
         const hit = hitTransform(
           e.transform.points,
@@ -662,7 +692,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       // Dragging right after the first press draws the line in one gesture.
       if (g.fresh) line.placed = true;
       const handle = g.lineHandle ?? "b";
-      line[handle] = ev.shiftKey ? snapAngle(handle === "a" ? line.b : line.a, p) : p;
+      line[handle] = ev.shiftKey ? constrainShape(e.shape.kind, handle === "a" ? line.b : line.a, p) : p;
       line.stroke.moveLine(line.a, line.b);
       return;
     }

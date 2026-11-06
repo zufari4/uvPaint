@@ -93,6 +93,13 @@ export type Tool =
   | "island"
   | "pan";
 export type SelectionMode = "replace" | "add" | "subtract";
+export type ShapeKind = "line" | "rect" | "ellipse" | "polygon";
+export type ShapeOptions = {
+  kind: ShapeKind;
+  fill: "none" | "primary" | "secondary";
+  outline: boolean;
+  sides: number;
+};
 export type TransformSession = {
   /** Newly imported pixels must keep their placement even without a drag. */
   initialPlacement?: boolean;

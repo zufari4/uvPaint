@@ -76,6 +76,7 @@ Requires Node.js 18+; npm downloads the Electron runtime during installation. Up
 | Resize brush under the cursor | **F**, move, click (**Esc** cancels) |
 | Brush size / opacity | **[** **]** / **1–9**, **0** |
 | Straight line | **N**: click two points or drag, drag end points to adjust, **Enter** applies, **Shift** snaps to 45° |
+| Shapes | Hold or right-click the line button to pick a rectangle, ellipse or regular polygon; choose fill and outline in the options bar, **Shift** draws squares and circles |
 | Select all / deselect / invert | **Ctrl+A** / **Ctrl+D** / **Ctrl+Shift+I** |
 | Copy · cut · paste · to new layer · extract | **Ctrl+C** · **Ctrl+X** · **Ctrl+V** · **Ctrl+J** · **Ctrl+Shift+J** |
 | Apply / cancel transform | **Enter** / **Esc** |

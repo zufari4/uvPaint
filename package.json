@@ -85,7 +85,8 @@
       "shortcutName": "uvPaint",
       "artifactName": "uvPaint-Setup-${version}.exe",
       "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico"
+      "uninstallerIcon": "build/icon.ico",
+      "include": "build/installer.nsh"
     }
   }
 }

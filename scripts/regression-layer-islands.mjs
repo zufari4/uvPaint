@@ -170,8 +170,8 @@ try {
     '3D click selects the material, island and linked layer of another model part');
   await page.getByTitle('Application menu',{exact:true}).click();
   await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
-  check(await page.getByLabel('Clip edits to UV islands',{exact:true}).count() === 1 && await page.getByLabel('UV map name',{exact:true}).count() === 1,
-    "UV clipping and map alias remain accessible in Settings");
+  check(await page.getByLabel('Clip edits to UV islands',{exact:true}).count() === 0 && await page.getByLabel('UV map name',{exact:true}).count() === 0,
+    "Unused UV clipping and map alias options are hidden from Settings");
   await page.keyboard.press('Escape');
   check(await page.getByLabel('UV set',{exact:true}).count() === 1, "UV map selector remains available beside the material");
   await mkdir('test-results',{recursive:true});

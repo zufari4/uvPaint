@@ -74,6 +74,14 @@ export class LayerCompositor {
     ctx.restore();
     return c;
   }
+  /** Builds the cached groups ahead of time, so the first brush frame on a newly selected layer does not stall. */
+  prepare(doc: TextureDocument) {
+    const index = doc.layers.findIndex((l) => l.id === doc.activeId);
+    const above = doc.layers.slice(index + 1);
+    if (index < 0 || doc.layers.length < 3 || above.some((l) => l.visible && l.blend !== "source-over")) return;
+    this.group("below", doc, doc.layers.slice(0, index));
+    this.group("above", doc, above);
+  }
   private group(which: "below" | "above", doc: TextureDocument, layers: Layer[]) {
     const key = groupKey(layers), cached = this[which];
     const fits = !!cached && cached.image.width === doc.width && cached.image.height === doc.height;

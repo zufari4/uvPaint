@@ -135,6 +135,15 @@ export function LayersPanel({ dockHandleProps, onCollapse, collapseSide = "right
       layer.uvBinding?.uvSet === d.uvSet && d.selectedIslands.includes(layer.uvBinding.island.id));
     if (first) list.current?.querySelector<HTMLElement>(`[data-layer-id="${CSS.escape(first.id)}"]`)?.scrollIntoView({ block: "nearest" });
   }, [islandKey]);
+  // Moving the active layer up or down keeps its row in view.
+  const activeIndex = d ? d.layers.findIndex((layer) => layer.id === d.activeId) : -1;
+  const lastPlace = useRef({ id: "", index: -1 });
+  useEffect(() => {
+    const last = lastPlace.current;
+    lastPlace.current = { id: d?.activeId ?? "", index: activeIndex };
+    if (!d || last.id !== d.activeId || last.index === activeIndex) return;
+    list.current?.querySelector<HTMLElement>(`[data-layer-id="${CSS.escape(d.activeId)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [d?.activeId, activeIndex]);
   return (
     <div className="layers-panel">
       <div {...dockHandleProps} className="layers-drag-handle" />

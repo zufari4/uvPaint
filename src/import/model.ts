@@ -203,7 +203,7 @@ export async function prepareModel(
     const slot = slots.find((s) => s.id === doc.id)!;
     if (!slot.uvSets.includes(doc.uvSet)) doc.uvSet = slot.uvSets[0] ?? "uv";
     doc.islands = extractIslands(scene, doc.id, doc.uvSet);
-    doc.restrict = doc.islands.length > 0;
+    doc.restrict = false;
     syncMaterial(slot, doc);
     slot.documents.push(doc);
     for (const [sourceIndex, source] of slot.sourceTextures.entries()) {
@@ -240,7 +240,7 @@ export async function prepareModel(
         uvSet: source.uvSet,
         islands,
         selectedIslands: [],
-        restrict: islands.length > 0,
+        restrict: false,
         alphaMode: doc.alphaMode,
         alphaCutoff: doc.alphaCutoff,
         uvNames: {},

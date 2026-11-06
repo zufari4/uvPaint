@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Check,
   X,
@@ -16,10 +16,18 @@ import { useEditor } from "./hooks";
 import { Button } from "./Button";
 export function OptionsBar() {
   const e = useEditor();
-  const [sx, setSx] = useState(100),
-    [sy, setSy] = useState(100),
-    [angle, setAngle] = useState(0),
+  // Typed values wait for Set; otherwise the fields follow the frame while it is dragged.
+  const [draft, setDraft] = useState<{ w: number; h: number; angle: number } | null>(null),
     [linked, setLinked] = useState(true);
+  const frame = e.frameGeometry;
+  const live = { w: Math.round(frame?.width ?? 100), h: Math.round(frame?.height ?? 100), angle: Math.round((frame?.angle ?? 0) * 10) / 10 };
+  const shown = draft ?? live;
+  const sx = shown.w, sy = shown.h, angle = shown.angle;
+  const edit = (patch: Partial<typeof live>) => setDraft({ ...shown, ...patch });
+  const setSx = (w: number) => edit(linked ? { w, h: Math.round((w * shown.h) / (shown.w || 1)) } : { w });
+  const setSy = (h: number) => edit(linked ? { h, w: Math.round((h * shown.w) / (shown.h || 1)) } : { h });
+  const setAngle = (value: number) => edit({ angle: value });
+  useEffect(() => setDraft(null), [e.transform]);
   const selection = ["rect", "lasso", "polygon", "wand"].includes(e.tool);
   return (
     <div className="options-bar">
@@ -32,7 +40,7 @@ export function OptionsBar() {
             polygon: "Polygon lasso",
             wand: "Magic wand",
             brush: "Brush",
-            line: "Line",
+            line: { line: "Line", rect: "Rectangle", ellipse: "Ellipse", polygon: "Polygon" }[e.shape.kind],
             eraser: "Eraser",
             fill: "Fill",
             eyedropper: "Eyedropper",
@@ -195,8 +203,38 @@ export function OptionsBar() {
           {e.tool === "clone" && (
             <span className="options-hint">Alt-click to set source</span>
           )}
+          {e.tool === "line" && e.shape.kind !== "line" && (
+            <>
+              <label title="Shape fill">
+                Fill{" "}
+                <select aria-label="Shape fill" value={e.shape.fill}
+                  onChange={ev => e.setShape({ fill: ev.target.value as typeof e.shape.fill })}>
+                  <option value="none">None</option>
+                  <option value="primary">Primary color</option>
+                  <option value="secondary">Secondary color</option>
+                </select>
+              </label>
+              <label title="Outline in the primary color, Size sets its width">
+                <input type="checkbox" aria-label="Shape outline" checked={e.shape.outline}
+                  disabled={e.shape.fill === "none"}
+                  onChange={ev => e.setShape({ outline: ev.target.checked })} />{" "}
+                Outline
+              </label>
+              {e.shape.kind === "polygon" && (
+                <label>
+                  Sides{" "}
+                  <input aria-label="Polygon sides" type="number" min="3" max="24" value={e.shape.sides}
+                    onChange={ev => e.setShape({ sides: Math.max(3, Math.min(24, Math.round(+ev.target.value) || 3)) })} />
+                </label>
+              )}
+            </>
+          )}
           {e.tool === "line" && (
-            <span className="options-hint">Click two points or drag · drag end points to adjust · Enter applies · Shift snaps to 45°</span>
+            <span className="options-hint">{e.shape.kind === "polygon"
+              ? "Drag from the centre to a corner · drag points to adjust · Enter applies · Shift snaps rotation"
+              : e.shape.kind === "line"
+                ? "Click two points or drag · drag end points to adjust · Enter applies · Shift snaps to 45°"
+                : `Drag corner to corner · drag points to adjust · Enter applies · Shift draws a ${e.shape.kind === "rect" ? "square" : "circle"}`}</span>
           )}
         </>
       )}
@@ -247,10 +285,7 @@ export function OptionsBar() {
               aria-label="Transform width percent"
               type="number"
               value={sx}
-              onChange={(ev) => {
-                setSx(+ev.target.value);
-                if (linked) setSy(+ev.target.value);
-              }}
+              onChange={(ev) => setSx(+ev.target.value)}
             />
             %
           </label>
@@ -259,10 +294,7 @@ export function OptionsBar() {
               aria-label="Lock proportions"
               type="checkbox"
               checked={linked}
-              onChange={(ev) => {
-                setLinked(ev.target.checked);
-                if (ev.target.checked) setSy(sx);
-              }}
+              onChange={(ev) => setLinked(ev.target.checked)}
             />
             ↔
           </label>
@@ -272,10 +304,7 @@ export function OptionsBar() {
               aria-label="Transform height percent"
               type="number"
               value={sy}
-              onChange={(ev) => {
-                setSy(+ev.target.value);
-                if (linked) setSx(+ev.target.value);
-              }}
+              onChange={(ev) => setSy(+ev.target.value)}
             />
             %
           </label>
@@ -293,10 +322,8 @@ export function OptionsBar() {
             title="Apply scale and rotation to transform"
             disabled={!e.layer}
             onClick={() => {
-              e.adjustTransform(sx / 100, sy / 100, angle);
-              setSx(100);
-              setSy(100);
-              setAngle(0);
+              e.setTransformFrame(sx, sy, angle);
+              setDraft(null);
             }}
           >
             Set

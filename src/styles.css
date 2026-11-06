@@ -301,6 +301,42 @@ select {
   padding-top: 8px;
   margin-top: 5px;
 }
+.tool-shapes { position: relative; }
+.tool-rail button.has-flyout { position: relative; }
+.tool-rail button.has-flyout::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  border: 3px solid transparent;
+  border-right-color: currentColor;
+  border-bottom-color: currentColor;
+  opacity: 0.55;
+}
+.tool-flyout {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+  padding: 4px;
+  background: #262c32;
+  border: 1px solid #48545d;
+  border-radius: 6px;
+  box-shadow: 0 12px 30px #0006;
+}
+.tool-rail .tool-flyout button {
+  width: 100%;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px;
+  justify-content: flex-start;
+  white-space: nowrap;
+}
 .color-swatch {
   margin: 0;
 }
@@ -1522,7 +1558,9 @@ button.texture-expand:hover:not(:disabled), button.texture-expand:focus-visible 
 .layers-tab[data-dock$=left] { left: 0; }
 .layers-tab[data-dock$=right] { right: 0; }
 .layers-collapse { margin-left: auto; padding: 3px; }
-.cursor-brush > canvas, .cursor-line > canvas, .cursor-eraser > canvas, .cursor-clone > canvas { cursor: none; }
+.canvas-host:has(.layers-tab[data-dock=top-right]) > .texture-expand { right: auto; left: 8px; }
+.canvas-host:has(.layers-tab[data-dock=bottom-left]) > .canvas-zoom { left: auto; right: 8px; bottom: 8px; }
+.cursor-brush > canvas, .cursor-eraser > canvas, .cursor-clone > canvas { cursor: none; }
 .canvas-host:has(.brush-footprint[data-size]) > canvas { cursor: crosshair; }
 .brush-footprint[data-size]::after {
   content: attr(data-size);

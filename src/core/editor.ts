@@ -3,6 +3,7 @@ import type {
   ModelAsset,
   Point,
   SelectionMode,
+  ShapeOptions,
   TextureDocument,
   Tool,
   TransformSession,
@@ -54,6 +55,7 @@ export class Editor {
   brushSize = 32;
   toolOpacity: Partial<Record<Tool, number>> = {};
   toolHardness: Partial<Record<Tool, number>> = {};
+  shape: ShapeOptions = { kind: "line", fill: "none", outline: true, sides: 6 };
   tolerance = 24;
   contiguous = true;
   uvDisplay: UVDisplayMode = "outline";
@@ -84,6 +86,7 @@ export class Editor {
   /** A placed but not yet applied line whose end points can still be dragged. */
   lineEdit: { stroke: PaintStroke; a: Point; b: Point; placed: boolean } | null = null;
   private compositor = new LayerCompositor();
+  private warmTimer = 0;
   message = "Open a GLB to start, or create a texture.";
   notice: { id: number; text: string } | null = null;
   error = "";
@@ -108,6 +111,11 @@ export class Editor {
       for (const [field, target] of [["opacity", this.toolOpacity], ["hardness", this.toolHardness]] as const)
         for (const [tool, value] of Object.entries(saved?.[field] ?? {}))
           if (typeof value === "number" && value >= 0 && value <= 1) target[tool as Tool] = value;
+      const shape = saved?.shape ?? {};
+      if (["line", "rect", "ellipse", "polygon"].includes(shape.kind)) this.shape.kind = shape.kind;
+      if (["none", "primary", "secondary"].includes(shape.fill)) this.shape.fill = shape.fill;
+      if (typeof shape.outline === "boolean") this.shape.outline = shape.outline;
+      if (Number.isInteger(shape.sides) && shape.sides >= 3 && shape.sides <= 24) this.shape.sides = shape.sides;
     } catch { /* defaults */ }
   }
   get brushOpacity() { return this.toolOpacity[this.tool] ?? 1; }
@@ -115,8 +123,16 @@ export class Editor {
   get brushHardness() { return this.toolHardness[this.tool] ?? 1; }
   set brushHardness(value: number) { this.toolHardness[this.tool] = value; this.saveToolOptions(); }
   private saveToolOptions() {
-    try { localStorage.setItem(toolOptionsKey, JSON.stringify({ opacity: this.toolOpacity, hardness: this.toolHardness })); }
+    try { localStorage.setItem(toolOptionsKey, JSON.stringify({ opacity: this.toolOpacity, hardness: this.toolHardness, shape: this.shape })); }
     catch { /* session-only options */ }
+  }
+  /** Updates the shape tool options; the chosen shape is remembered between sessions. */
+  setShape(patch: Partial<ShapeOptions>) {
+    this.shape = { ...this.shape, ...patch };
+    if (this.shape.fill === "none") this.shape.outline = true;
+    this.saveToolOptions();
+    if (this.lineEdit) this.lineEdit.stroke.moveLine(this.lineEdit.a, this.lineEdit.b);
+    this.emit();
   }
   setUVDisplay(mode: UVDisplayMode) { this.uvDisplay = mode; this.savePreferences(); }
   get textureIsolated() { return this.textureFocusEnabled && !!this.layer?.uvBinding?.island.faces?.length; }
@@ -256,6 +272,11 @@ export class Editor {
     }
     this.revision++;
     this.listeners.forEach((fn) => fn());
+    if (!this.warmTimer && this.doc)
+      this.warmTimer = window.setTimeout(() => {
+        this.warmTimer = 0;
+        if (this.doc) this.compositor.prepare(this.doc);
+      }, 120);
   }
   notify(message: string) {
     this.message = message;
@@ -1291,6 +1312,37 @@ export class Editor {
         };
       }),
     );
+  }
+  /** Current frame relative to where the transform started: width/height in percent, rotation in degrees. */
+  get frameGeometry() {
+    const t = this.transform;
+    if (!t) return null;
+    const [ia, ib, id] = t.kind === "mesh" ? [0, 3, 12] : [0, 1, 3];
+    const p = t.points, o = t.original, len = (a: Point, b: Point) => Math.hypot(b.x - a.x, b.y - a.y);
+    const turn = Math.atan2(p[ib].y - p[ia].y, p[ib].x - p[ia].x) - Math.atan2(o[ib].y - o[ia].y, o[ib].x - o[ia].x);
+    return {
+      width: (len(p[ia], p[ib]) / (len(o[ia], o[ib]) || 1)) * 100,
+      height: (len(p[ia], p[id]) / (len(o[ia], o[id]) || 1)) * 100,
+      angle: ((((turn * 180) / Math.PI) % 360) + 540) % 360 - 180,
+    };
+  }
+  /** Sets the frame to absolute width/height percentages and rotation, measured in the frame's own axes. */
+  setTransformFrame(width: number, height: number, degrees: number) {
+    this.beginTransform(this.transform?.kind ?? "free");
+    const t = this.transform, frame = this.frameGeometry;
+    if (!t || !frame || !frame.width || !frame.height) return;
+    const cx = t.points.reduce((a, p) => a + p.x, 0) / t.points.length,
+      cy = t.points.reduce((a, p) => a + p.y, 0) / t.points.length;
+    const [ia, ib] = t.kind === "mesh" ? [0, 3] : [0, 1];
+    const current = Math.atan2(t.points[ib].y - t.points[ia].y, t.points[ib].x - t.points[ia].x);
+    const target = current + ((degrees - frame.angle) * Math.PI) / 180;
+    const sx = width / frame.width, sy = height / frame.height;
+    this.updateTransform(t.points.map((p) => {
+      const dx = p.x - cx, dy = p.y - cy;
+      const lx = (dx * Math.cos(current) + dy * Math.sin(current)) * sx,
+        ly = (-dx * Math.sin(current) + dy * Math.cos(current)) * sy;
+      return { x: cx + lx * Math.cos(target) - ly * Math.sin(target), y: cy + lx * Math.sin(target) + ly * Math.cos(target) };
+    }));
   }
   confirmTransform() {
     this.finishLine();

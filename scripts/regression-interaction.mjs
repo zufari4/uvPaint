@@ -44,7 +44,8 @@ try {
     }
     const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
     await e.importModel(new Uint8Array(glb), "UV clipping test.glb");
-    const defaults = e.doc.restrict && e.doc.selectedIslands.length === 0;
+    const defaults = !e.doc.restrict && e.doc.selectedIslands.length === 0;
+    e.doc.restrict = true;
     e.addEmpty();
     e.tool = "brush";
     // The brush keeps the 50% set by the Digit5 shortcut earlier; this check needs full coverage.
@@ -99,7 +100,7 @@ try {
   });
   ok(
     clipping.defaults,
-    "UV clipping defaults to all islands without selection",
+      "Unlinked layers are not clipped to UV islands by default",
   );
   ok(
     JSON.stringify(clipping.all) === "[0,255,0,255,0]",
