@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Menu, Settings, HelpCircle, Info, FolderOpen, Download, Save, SaveAll, RefreshCw } from "lucide-react";
+import { Menu, Settings, HelpCircle, Info, FolderOpen, Download, Save, SaveAll, RefreshCw, CloudDownload } from "lucide-react";
 import { useEditor } from "./hooks";
 import { RecentProjectsMenu } from "./RecentProjectsMenu";
 import { FilterMenu } from "./FilterMenu";
 export function AppMenu({
   onSelect,
 }: {
-  onSelect: (item: "settings" | "help" | "about" | "pixelate") => void;
+  onSelect: (item: "settings" | "help" | "about" | "updates" | "pixelate") => void;
 }) {
   const e = useEditor();
   const [open, setOpen] = useState(false),
@@ -105,6 +105,7 @@ export function AppMenu({
             [
               ["settings", Settings, "Settings"],
               ["help", HelpCircle, "Help"],
+              ["updates", CloudDownload, "Check for updates"],
               ["about", Info, "About"],
             ] as const
           ).map(([item, Icon, label]) => (

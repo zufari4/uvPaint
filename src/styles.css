@@ -1437,6 +1437,10 @@ button.preview-expand:focus-visible {
   margin-top: 25px;
   color: #a9e7d3;
 }
+.about-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 4px 0 16px; color: #abb8c3; font-size: calc(12px * var(--ui-text-scale, 1.4)); }
+.about-facts dt { color: #8494a4; }
+.about-facts dd { margin: 0; }
+.about-link { display: inline-flex; align-items: center; gap: 6px; padding: 0; color: #9fe3cf; }
 
 .canvas-zoom { position:absolute; left:8px; bottom:8px; padding:0; background:transparent; z-index:3; }
 .menu-divider {height:1px; background:#424950; margin:5px 0;}

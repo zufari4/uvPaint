@@ -123,6 +123,8 @@ declare global {
       savePNG(bytes: Uint8Array, name: string): Promise<string | null>;
       saveProject(bytes: Uint8Array, name: string, handle?: string): Promise<{ name: string; handle: string } | null>;
       memory(): Promise<number>;
+      latestRelease(): Promise<{ version: string; url: string }>;
+      openProjectPage(url: string): Promise<void>;
       windowState(): Promise<{ maximized: boolean }>;
       windowAction(action: "minimize" | "maximize" | "close"): Promise<void>;
       onWindowState(

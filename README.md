@@ -55,7 +55,7 @@ Sliders update the 2D texture and the 3D model while you drag them; the whole im
 2. Start **uvPaint** from the Start menu or the desktop shortcut.
 3. Open a GLB (**Ctrl+O**) or try the built-in sample, pick a material and start painting.
 
-No account, Blender or internet connection is required. To build it yourself, see [Building from source](#️-building-from-source); the result is `release/current/win-unpacked/uvPaint.exe` (keep the whole folder together).
+No account, Blender or internet connection is required. **Check for updates** in the ☰ menu compares your version with the latest GitHub release. To build it yourself, see [Building from source](#️-building-from-source); the result is `release/current/win-unpacked/uvPaint.exe` (keep the whole folder together).
 
 ### 📦 Or install with npm
 

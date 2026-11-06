@@ -1,6 +1,12 @@
-import { X } from "lucide-react";
+import { X, ExternalLink } from "lucide-react";
 import { Button } from "./Button";
 import { version } from "../../package.json";
+
+export const projectUrl = "https://github.com/zufari4/uvPaint";
+export function openProjectPage(url = projectUrl) {
+  if (window.desktop) void window.desktop.openProjectPage(url);
+  else window.open(url, "_blank", "noopener");
+}
 export function AboutDialog({ close }: { close: () => void }) {
   return (
     <div className="modal-backdrop">
@@ -28,6 +34,16 @@ export function AboutDialog({ close }: { close: () => void }) {
         </div>
         <p>Version {version}</p>
         <p>Texture painting with UV guides and a live 3D preview.</p>
+        <dl className="about-facts">
+          <dt>Author</dt>
+          <dd>zufari4</dd>
+          <dt>Project</dt>
+          <dd>
+            <button type="button" className="text-button about-link" title={projectUrl} onClick={() => openProjectPage()}>
+              github.com/zufari4/uvPaint <ExternalLink size={13} />
+            </button>
+          </dd>
+        </dl>
         <small>
           Electron · React · Three.js
           <br />

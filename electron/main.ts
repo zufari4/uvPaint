@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, session, Menu } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, Menu, net, shell } from "electron";
 import { readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { basename, dirname, join, isAbsolute, extname } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -6,6 +6,7 @@ import { freemem } from "node:os";
 import { RecentProjects } from "./recent-projects";
 let win: BrowserWindow;
 const projectFiles = new Map<string, string>();
+const projectPage = "https://github.com/zufari4/uvPaint";
 // Keep settings and recent projects saved by releases named "UV Paint".
 if (!app.commandLine.hasSwitch("user-data-dir")) app.setPath("userData", join(app.getPath("appData"), "UV Paint"));
 app.whenReady().then(async () => {
@@ -86,6 +87,26 @@ app.whenReady().then(async () => {
       ...(kind === "model" ? { sourcePath: file } : {}),
       ...(handle ? { handle } : {}),
     };
+  });
+  ipcMain.handle("app:latest-release", async (event) => {
+    validate(event);
+    let response: Response;
+    try {
+      response = await net.fetch("https://api.github.com/repos/zufari4/uvPaint/releases/latest", {
+        headers: { Accept: "application/vnd.github+json", "User-Agent": "uvPaint" },
+      });
+    } catch { throw new Error("Cannot reach GitHub. Check the internet connection and try again."); }
+    if (!response.ok) throw new Error(`GitHub could not report the latest release (HTTP ${response.status}).`);
+    const data = await response.json() as { tag_name?: unknown; html_url?: unknown };
+    const url = typeof data.html_url === "string" && data.html_url.startsWith(projectPage) ? data.html_url : `${projectPage}/releases/latest`;
+    return { version: String(data.tag_name ?? "").replace(/^v/, ""), url };
+  });
+  ipcMain.handle("app:open-project-page", async (event, url) => {
+    validate(event);
+    // Only pages of this project may be opened in the system browser.
+    if (typeof url !== "string" || (url !== projectPage && !url.startsWith(`${projectPage}/`)))
+      throw new Error("Only uvPaint project pages can be opened.");
+    await shell.openExternal(url);
   });
   ipcMain.handle("model:reload", async (event, file) => {
     validate(event);

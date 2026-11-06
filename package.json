@@ -27,6 +27,7 @@
     "test:filter": "node scripts/regression-filter.mjs",
     "test:line": "node scripts/regression-line.mjs",
     "test:tools": "node scripts/regression-tools.mjs",
+    "test:about": "node scripts/regression-about.mjs",
     "test:layers-panel": "node scripts/regression-layers-panel.mjs",
     "test:project": "node scripts/regression-project.mjs",
     "test:recent": "node scripts/regression-recent.mjs",
