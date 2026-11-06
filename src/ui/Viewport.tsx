@@ -153,7 +153,7 @@ export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onTo
     let frame = 0;
     const noHover = new Set<string>();
     let hoverFaces = noHover, hoverIsland: object | undefined;
-    const clearHover = () => { hoverFaces = noHover; hoverIsland = undefined; };
+    const clearHover = () => { hoverFaces = noHover; hoverIsland = undefined; delete renderer.domElement.dataset.hoverIsland; };
     const animate = () => {
       frame = requestAnimationFrame(animate);
       if (lastLighting !== e.studioLighting) {
@@ -205,6 +205,8 @@ export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onTo
       const doc = e.docs.get(mat.userData.slotId);
       const island = doc && face !== undefined ? islandForFace(doc.islands,part.uuid,face) : undefined;
       if (island !== hoverIsland) { hoverIsland=island; hoverFaces=island ? new Set(island.faces?.map(faceKey)) : noHover; }
+      // Material and island under the pointer, e.g. for automated tests aiming at a face.
+      renderer.domElement.dataset.hoverIsland = island ? `${mat.userData.slotId}:${island.id}` : "";
     };
     let clickStart: { x: number; y: number; pointerId: number } | null = null;
     const pickIsland=(event:PointerEvent)=>{

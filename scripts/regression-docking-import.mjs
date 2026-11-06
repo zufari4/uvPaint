@@ -85,24 +85,28 @@ try {
   await mkdir('test-results',{recursive:true}); const file=path.resolve('test-results/picker-source.png'); await writeFile(file,new Uint8Array(png));
   await app.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},file);
   const open = async () => { await page.getByTitle('Import image layer',{exact:true}).click(); await page.getByRole('dialog',{name:'Import image'}).waitFor(); await page.getByRole('button',{name:'Next',exact:true}).click(); await page.getByTestId('import-island-preview').waitFor(); };
-  await page.evaluate(() => { e.selectIsland(4);e.setIslandVisibility('except');e.selectIsland(-1);e.model.parts[0].visible=false;window.hiddenBeforeImport=e.hiddenFaces; });
+  await page.evaluate(() => { e.selectIsland(4);e.setIslandVisibility('except');e.selectIsland(-1);e.model.parts[0].visible=false;window.hiddenBeforeImport=e.hiddenFaces;window.layersBefore=e.doc.layers.length; });
   await open(); check(await page.getByRole('button',{name:'Import linked image',exact:true}).isDisabled(), 'Image area confirmation opens a 3D island picker before importing');
-  const pick = page.getByTestId('import-island-preview'); await pick.hover(); await page.keyboard.press('Numpad1'); await pick.click();
+  const pick = page.getByTestId('import-island-preview'); await pick.hover(); await page.keyboard.press('Numpad1');
+  // The crate stands left of the drum; aim at the middle of its front face.
+  const pickBox = await pick.boundingBox(); await pick.click({position:{x:pickBox.width*0.3,y:pickBox.height*0.52}});
   await page.getByRole('button',{name:'Import linked image',exact:true}).waitFor({state:'visible'});
   check(await page.getByRole('button',{name:'Import linked image',exact:true}).isEnabled(), 'Clicking a model face chooses its exact UV island');
   check(await page.evaluate(()=>e.hiddenFaces===window.hiddenBeforeImport&&!e.model.parts[0].visible),'Import picker can select hidden faces and objects without changing main visibility');
-  check(await page.evaluate(() => e.doc.layers.length===1 && e.doc.selectedIslands.length===0 && e.model.scene.children.length>0), 'Picker changes neither the main model nor layers before confirmation');
+  check(await page.evaluate(() => e.doc.layers.length===window.layersBefore && e.doc.selectedIslands.length===0 && e.model.scene.children.length>0), 'Picker changes neither the main model nor layers before confirmation');
   await page.screenshot({path:'test-results/import-island-picker.png'});
   await page.getByRole('button',{name:'Import linked image',exact:true}).click(); await page.getByRole('dialog',{name:'Import image'}).waitFor({state:'hidden'});
-  check(await page.evaluate(() => e.doc.layers.length===2 && e.layer.uvBinding?.island.id===4 && e.transform?.source.width===64 && e.transform.clip===e.layer.uvMask), 'Imported image is linked to the picked island and starts a masked placement');
+  check(await page.evaluate(() => e.doc.layers.length===window.layersBefore+1 && e.layer.uvBinding?.island.id===4 && e.transform?.source.width===64 && e.transform.clip===e.layer.uvMask), 'Imported image is linked to the picked island and starts a masked placement');
   await page.evaluate(()=>{e.model.parts[0].visible=true;e.setIslandVisibility('all');});
   await page.keyboard.press('Enter'); await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
-  check(await page.evaluate(() => e.doc.layers.length===1), 'Undo removes both image import and its UV binding');
+  check(await page.evaluate(() => e.doc.layers.length===window.layersBefore), 'Undo removes both image import and its UV binding');
   await open(); await page.keyboard.press('Escape'); await page.getByRole('dialog',{name:'Import image'}).waitFor({state:'hidden'});
-  check(await page.evaluate(() => e.doc.layers.length===1 && !e.transform), 'Canceling the 3D import step leaves the layer stack intact');
-  await open(); await pick.hover(); await page.keyboard.press('Numpad7'); await pick.click();
+  check(await page.evaluate(() => e.doc.layers.length===window.layersBefore && !e.transform), 'Canceling the 3D import step leaves the layer stack intact');
+  await open(); await pick.hover(); await page.keyboard.press('Numpad7');
+  // From above, the drum lid lies right of the crate.
+  await pick.click({position:{x:pickBox.width*0.7,y:pickBox.height*0.5}});
   await page.getByRole('button',{name:'Import linked image',exact:true}).click(); await page.getByRole('dialog',{name:'Import image'}).waitFor({state:'hidden'});
-  check(await page.evaluate(() => e.activeId===e.model.slots[1].id && e.layer.uvBinding?.island.id===2), 'Picking another material creates the bound image layer in that material');
+  check(await page.evaluate(async () => { const {hitIsland}=await import('/src/tools/uv.ts'); return e.activeId===e.model.slots[1].id && e.layer.uvBinding?.island.id===hitIsland(e.doc,{x:.25*e.doc.width,y:.74*e.doc.height}); }), 'Picking another material creates the bound image layer in that material');
   await page.keyboard.press('Enter');
   const countBeforeAdd=await page.evaluate(()=>e.doc.layers.length);
   await page.getByTitle('Import image layer',{exact:true}).click();

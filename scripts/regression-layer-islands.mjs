@@ -102,7 +102,9 @@ try {
   await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');e.setLayerIsland(2);});
   await page.locator('.layer-row').last().click();
   check((await state()).binding === 1, "Selecting another layer restores its own UV binding");
-  check(await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');return e.visibleIslands.length===1&&e.visibleIslands[0].id===1&&e.textureHiddenFaces.size===22&&e.hiddenFaces.size===0&&e.model.parts.every(p=>p.geometry.index.count===36);}),
+  check(await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');const {sourceGeometry}=await import('/src/render/mesh-source.ts');
+    const full=p=>sourceGeometry(p).index.count,faces=e.model.parts.reduce((s,p)=>s+full(p)/3,0);
+    return e.visibleIslands.length===1&&e.visibleIslands[0].id===1&&e.textureHiddenFaces.size===faces-2&&e.hiddenFaces.size===0&&e.model.parts.every(p=>p.geometry.index.count===full(p));}),
     'Selecting a bound layer isolates 2D pixels and guides while all 3D faces remain visible');
   const isolation = await page.evaluate(async()=>{
     const {Editor}=await import('/src/core/editor.ts'); const e=new Editor(); await e.sample();
@@ -129,44 +131,60 @@ try {
   await page.keyboard.press('Escape');check(!(await state()).picking, "Escape cancels picking");
   await picker().click();
   await page.getByTestId('texture-canvas').click();
-  check((await state()).binding === 0 && !(await state()).picking && (await state()).pixels === before.pixels,
+  const centre=await page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');const {hitIsland}=await import('/src/tools/uv.ts');return hitIsland(e.doc,{x:e.doc.width/2,y:e.doc.height/2});});
+  check((await state()).binding === centre && !(await state()).picking && (await state()).pixels === before.pixels,
     "2D picker binds an island without painting or transforming pixels");
+  // Moves over the 3D view until the given material island is under the pointer.
+  const aim=async(slot,island)=>{
+    const view=page.getByTestId('preview-canvas'),box=await view.boundingBox();
+    const target=await page.evaluate(async([slot,island])=>{const {editor:e}=await import('/src/core/editor.ts');return `${e.model.slots[slot].id}:${island}`;},[slot,island]);
+    for(let fy=0.3;fy<=0.75;fy+=0.05) for(let fx=0.05;fx<=0.95;fx+=0.03){
+      await page.mouse.move(box.x+box.width*fx,box.y+box.height*fy);
+      if(await view.getAttribute('data-hover-island')===target) return {x:box.width*fx,y:box.height*fy};
+    }
+    throw new Error(`Island ${target} is not visible in the 3D view`);
+  };
   await picker().click();
   await page.getByTestId('preview-canvas').hover();await page.keyboard.press('Numpad1');
-  await page.getByTestId('preview-canvas').click();
+  const front=await aim(0,4);
+  await page.getByTestId('preview-canvas').click({position:front});
   check((await state()).binding === 4 && (await state()).pixels === before.pixels,
     "3D picker distinguishes overlapping UV islands by their original model faces");
-  await page.keyboard.press('Control+z');check((await state()).binding === 0, "Picker binding can be undone from the keyboard");
+  await page.keyboard.press('Control+z');check((await state()).binding === centre, "Picker binding can be undone from the keyboard");
   const layers = await page.evaluate(async()=>{
     const {editor:e}=await import('/src/core/editor.ts');
-    const first=e.layer.id;e.setLayerIsland(4);e.addEmpty();e.setLayerIsland(5);const back=e.layer.id;
-    e.addEmpty();e.setLayerIsland(4);const top=e.layer.id;e.selectLayer(back);
+    const first=e.layer.id;e.setLayerIsland(4);
+    // Test layers go above the sample's own linked stencils.
+    e.selectLayer(e.doc.layers.at(-1).id);e.addEmpty();e.setLayerIsland(5);const back=e.layer.id;
+    e.selectLayer(e.doc.layers.at(-1).id);e.addEmpty();e.setLayerIsland(4);const top=e.layer.id;e.selectLayer(back);
     return {first,back,top};
   });
   const active=()=>page.evaluate(async()=>{const {editor:e}=await import('/src/core/editor.ts');return {id:e.layer.id,selected:e.doc.selectedIslands,history:e.history.undoStack.length,pixels:e.output.toDataURL()};});
   const historyBeforeClick=(await active()).history;
   await showAll();
-  await page.getByTestId('preview-canvas').click();
+  await page.getByTestId('preview-canvas').click({position:front});
   check((await active()).id===layers.top&&(await active()).selected[0]===4,'Ordinary 3D click selects the corresponding island and top linked visible layer');
   check((await active()).history===historyBeforeClick,'3D layer selection does not create pixel undo entries');
   await page.evaluate(async id=>{const {editor:e}=await import('/src/core/editor.ts');e.selectLayer(id);},layers.first);
-  await page.getByTestId('preview-canvas').click();
+  await page.getByTestId('preview-canvas').click({position:front});
   check((await active()).id===layers.first,'3D click retains the active layer when it is already bound to the clicked island');
   await showAll();
   await page.getByTestId('preview-canvas').hover();await page.keyboard.press('Control+Numpad1');
-  await page.getByTestId('preview-canvas').click();
+  await page.getByTestId('preview-canvas').click({position:await aim(0,5)});
   check((await active()).id===layers.back&&(await active()).selected[0]===5,'Clicking another face with overlapping UVs selects its own linked layer');
   await page.getByTestId('preview-canvas').click({position:{x:3,y:3}});
   check((await active()).id===layers.back,'Clicking empty 3D space preserves the current layer');
   const material=await page.evaluate(async()=>{
-    const {editor:e}=await import('/src/core/editor.ts');const original=e.activeId;
-    e.selectMaterial(e.model.slots[1].id);e.setLayerIsland(2);
-    const result={material:e.activeId,layer:e.layer.id};e.selectMaterial(original);return result;
+    const {editor:e}=await import('/src/core/editor.ts');const {hitIsland}=await import('/src/tools/uv.ts');const original=e.activeId;
+    e.selectMaterial(e.model.slots[1].id);
+    // The drum lid is painted on the first cap disc of the drum texture.
+    const lid=hitIsland(e.doc,{x:.25*e.doc.width,y:.74*e.doc.height});e.setLayerIsland(lid);
+    const result={material:e.activeId,layer:e.layer.id,lid};e.selectMaterial(original);return result;
   });
   await showAll();
   await page.getByTestId('preview-canvas').hover();await page.keyboard.press('Numpad7');
-  await page.getByTestId('preview-canvas').click();
-  check(await page.evaluate(async expected=>{const {editor:e}=await import('/src/core/editor.ts');return e.activeId===expected.material&&e.layer.id===expected.layer&&e.doc.selectedIslands[0]===2;},material),
+  await page.getByTestId('preview-canvas').click({position:await aim(1,material.lid)});
+  check(await page.evaluate(async expected=>{const {editor:e}=await import('/src/core/editor.ts');return e.activeId===expected.material&&e.layer.id===expected.layer&&e.doc.selectedIslands[0]===expected.lid;},material),
     '3D click selects the material, island and linked layer of another model part');
   await page.getByTitle('Application menu',{exact:true}).click();
   await page.getByRole('menuitem',{name:'Settings',exact:true}).click();

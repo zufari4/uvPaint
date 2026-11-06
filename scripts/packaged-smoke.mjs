@@ -25,7 +25,8 @@ try {
     .click();
   await page.waitForSelector(".model-title");
   await page.waitForTimeout(500);
-  assert.equal(await page.locator(".layer-row").count(), 1);
+  // The sample crate material: wood base, two island-linked stencils and a dirt layer.
+  assert.equal(await page.locator(".layer-row").count(), 4);
   assert.equal(await page.getByLabel("Layer UV island", { exact: true }).count(), 0);
   assert.equal(await page.locator('.layer-footer').getByTitle('Pick UV island from canvas or model',{exact:true}).isEnabled(),true);
   assert.equal(await page.locator(".uv-panel").count(), 0);
@@ -65,11 +66,11 @@ try {
   await page.waitForFunction(() => document.querySelector('.notice-toast')?.textContent?.includes('Project saved:'));
   assert.equal((await readFile(project)).subarray(0, 8).toString(), 'UVPAINT1');
   await page.getByTitle('New empty layer', { exact: true }).click();
-  assert.equal(await page.locator('.layer-row').count(), 3);
+  assert.equal(await page.locator('.layer-row').count(), 6);
   await app.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, project);
   await page.getByTestId('texture-canvas').focus(); await page.keyboard.press('Control+Shift+o');
   await page.waitForFunction(() => document.querySelector('.notice-toast')?.textContent?.includes('Project opened:'));
-  assert.equal(await page.locator('.layer-row').count(), 2);
+  assert.equal(await page.locator('.layer-row').count(), 5);
   assert.equal(await page.locator('.project-file-name').textContent(), 'packaged-project.uvpaint');
   const textureShot = () => page.getByTestId('texture-canvas').screenshot();
   const unfiltered = await textureShot();

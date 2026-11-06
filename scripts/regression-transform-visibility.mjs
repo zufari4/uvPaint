@@ -28,7 +28,9 @@ try {
     const point=await page.evaluate(()=>{
       const r=document.querySelector('[data-testid=texture-canvas]').getBoundingClientRect(),panel=document.querySelector('.layers-sidebar').getBoundingClientRect();
       const z=Math.min((r.width-100)/e.doc.width,(r.height-100)/e.doc.height),ox=r.x+(r.width-e.doc.width*z)/2,oy=r.y+(r.height-e.doc.height*z)/2;
-      const candidates=e.doc.islands.flatMap(i=>i.triangles.map(([a,b,c])=>{
+      // Islands with their own linked layer would switch the active layer, so aim at a free one.
+      const linked=new Set(e.doc.layers.flatMap(l=>l.uvBinding?[l.uvBinding.island.id]:[]));
+      const candidates=e.doc.islands.filter(i=>!linked.has(i.id)).flatMap(i=>i.triangles.map(([a,b,c])=>{
         const x=ox+(a.x+b.x+c.x)/3*e.doc.width*z,y=oy+(a.y+b.y+c.y)/3*e.doc.height*z;
         return {x,y,area:Math.abs((b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x))};
       })).filter(p=>p.x>r.x+20&&p.x<r.right-20&&p.y>r.y+20&&p.y<r.bottom-40&&!(p.x>=panel.x&&p.x<=panel.right&&p.y>=panel.y&&p.y<=panel.bottom));
