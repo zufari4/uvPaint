@@ -71,6 +71,19 @@ try {
   await page.waitForFunction(() => document.querySelector('.notice-toast')?.textContent?.includes('Project opened:'));
   assert.equal(await page.locator('.layer-row').count(), 2);
   assert.equal(await page.locator('.project-file-name').textContent(), 'packaged-project.uvpaint');
+  const textureShot = () => page.getByTestId('texture-canvas').screenshot();
+  const unfiltered = await textureShot();
+  await page.getByTitle("Application menu", { exact: true }).click();
+  await page.getByRole("menuitem", { name: "Filter" }).hover();
+  await page.getByRole("menuitem", { name: "Smart pixelate…" }).click();
+  await page.getByRole("radio", { name: /Whole image/ }).check();
+  await page.getByLabel("Pixel size").fill("16");
+  await page.waitForFunction(() => !document.querySelector(".filter-status"));
+  await page.waitForTimeout(300);
+  assert.notDeepEqual(await textureShot(), unfiltered);
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog", { name: "Smart pixelate" }).waitFor({ state: "detached" });
+  assert.equal(await page.locator(".error-toast").count(), 0);
   await page.screenshot({
     path: "test-results/04-packaged.png",
   });
@@ -89,6 +102,7 @@ try {
           "Native image selection opens the four-tool import dialog",
           "No native Edit menu intercepts document shortcuts",
           "Native project save and open restore model and layer stack offline",
+          "Smart pixelate worker previews in the packaged file:// build",
         ],
         errors,
       },

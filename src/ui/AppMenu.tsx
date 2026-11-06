@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Menu, Settings, HelpCircle, Info, FolderOpen, Download, Save, SaveAll, RefreshCw } from "lucide-react";
 import { useEditor } from "./hooks";
 import { RecentProjectsMenu } from "./RecentProjectsMenu";
+import { FilterMenu } from "./FilterMenu";
 export function AppMenu({
   onSelect,
 }: {
-  onSelect: (item: "settings" | "help" | "about") => void;
+  onSelect: (item: "settings" | "help" | "about" | "pixelate") => void;
 }) {
   const e = useEditor();
   const [open, setOpen] = useState(false),
@@ -35,7 +36,7 @@ export function AppMenu({
         }
         const items = [
           ...(root.current?.querySelectorAll<HTMLButtonElement>(
-            ":scope > .app-menu-popover > button:not(:disabled), [data-recent-trigger]:not(:disabled)",
+            ":scope > .app-menu-popover > button:not(:disabled), [data-recent-trigger]:not(:disabled), [data-submenu-trigger]:not(:disabled)",
           ) ?? []),
         ];
         const index = items.indexOf(
@@ -97,6 +98,8 @@ export function AppMenu({
             onClick={() => { setOpen(false); trigger.current?.focus(); void e.run(() => e.export()); }}>
             <Download size={18} /> Export PNG
           </button>
+          <div className="menu-divider" role="separator" />
+          <FilterMenu onSelect={(item) => { setOpen(false); onSelect(item); }} />
           <div className="menu-divider" role="separator" />
           {(
             [

@@ -1507,3 +1507,36 @@ button.texture-expand:hover:not(:disabled), button.texture-expand:focus-visible 
 .cursor-brush > canvas, .cursor-eraser > canvas, .cursor-clone > canvas { cursor: none; }
 
 .project-file-name { margin-left: 20px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aebbc4; font-size: calc(11px * var(--ui-text-scale, 1.4)); -webkit-app-region: drag; }
+
+.submenu { position: relative; }
+.submenu-popover {
+  position: absolute;
+  right: 100%;
+  top: 0;
+  width: 240px;
+  padding: 6px;
+  background: #262c32;
+  border: 1px solid #48545d;
+  border-radius: 6px;
+  box-shadow: 0 12px 30px #0006;
+}
+/* The texture must stay visible and unblurred while the filter previews on it. */
+.modal-backdrop.filter-backdrop {
+  background: transparent;
+  backdrop-filter: none;
+  pointer-events: none;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 110px 24px 24px;
+}
+.filter-modal { pointer-events: auto; width: min(460px, 94vw); max-height: calc(100vh - 140px); }
+.filter-modal .setting-row { margin: 12px 0; }
+.filter-modal .setting-row output { width: 90px; }
+.filter-preview-toggle { display: flex; align-items: center; gap: 8px; margin: 14px 0 8px; color: #abb8c3; }
+.filter-footer { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+.filter-modal .modal-title { cursor: move; touch-action: none; user-select: none; }
+.filter-modal .modal-title button { cursor: pointer; }
+.filter-status { margin-left: auto; color: #8fd8c2; font-size: calc(10px * var(--ui-text-scale, 1.4)); }
+.filter-scope { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 10px; color: #abb8c3; font-size: calc(12px * var(--ui-text-scale, 1.4)); }
+.filter-scope label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.filter-scope label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

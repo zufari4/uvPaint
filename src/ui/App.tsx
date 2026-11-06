@@ -16,6 +16,7 @@ import { AppMenu } from "./AppMenu";
 import { AboutDialog } from "./AboutDialog";
 import { IslandMenu } from "./IslandMenu";
 import { ImageImportDialog } from "./ImageImportDialog";
+import { PixelateDialog } from "./PixelateDialog";
 export function App() {
   const e = useEditor();
   useShortcuts();
@@ -26,7 +27,7 @@ export function App() {
     );
   }, [e.textScale]);
   const [dialog, setDialog] = useState<
-      "size" | "help" | "settings" | "about" | null
+      "size" | "help" | "settings" | "about" | "pixelate" | null
     >(null),
     [split, setSplit] = useState(70);
   const [expandedView, setExpandedView] = useState<"texture" | "preview" | null>(null);
@@ -171,6 +172,7 @@ export function App() {
       {dialog === "size" && <SizeDialog close={() => setDialog(null)} />}{" "}
       {dialog === "help" && <HelpDialog close={() => setDialog(null)} />}
       {dialog === "about" && <AboutDialog close={() => setDialog(null)} />}
+      {dialog === "pixelate" && <PixelateDialog close={() => setDialog(null)} />}
       {dialog === "settings" && (
         <SettingsDialog
           close={() => setDialog(null)}

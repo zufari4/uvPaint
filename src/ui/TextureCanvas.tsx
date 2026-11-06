@@ -194,6 +194,8 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
           ctx.fillRect(x, y, Math.min(tile, w - x), Math.min(tile, h - y));
     visibility.current.update(doc, e.textureHiddenFaces, e.visibleIslands, e.textureIsolated);
     const visibleTexture = visibility.current.render(e.output, e.layer?.visible ? e.transform?.outside : undefined, 0.4 * (e.layer?.opacity ?? 0));
+    // Magnified texels stay crisp so pixel-level edits (e.g. pixelation) are visible.
+    ctx.imageSmoothingEnabled = zoom < 1;
     if (visibleTexture ?? e.output) ctx.drawImage((visibleTexture ?? e.output)!, 0, 0);
     if (!visibleTexture && e.transform?.outside && e.layer?.visible) {
       ctx.save();
@@ -201,6 +203,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       ctx.drawImage(e.transform.outside, 0, 0);
       ctx.restore();
     }
+    ctx.imageSmoothingEnabled = true;
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, w, h);

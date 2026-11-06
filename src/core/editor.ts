@@ -69,6 +69,7 @@ export class Editor {
   private pendingTransform: { session: TransformSession; points: Point[] } | null = null;
   private dragPreview: HTMLCanvasElement | null = null;
   private reducedPreview = false;
+  private filterBase: TextureDocument | null = null;
   cloneSource: Point | null = null;
   message = "Open a GLB to start, or create a texture.";
   notice: { id: number; text: string } | null = null;
@@ -532,6 +533,45 @@ export class Editor {
     fn(next);
     this.history.push(label, before);
     this.docs.set(this.activeId, next);
+    this.emit(true);
+  }
+  beginFilter() {
+    this.cancelFilter();
+    this.pickingLayerIsland = false;
+    this.islandMenu = null;
+    this.confirmTransform();
+    if (!this.doc?.layers.length) return null;
+    this.filterBase = this.doc;
+    return this.doc;
+  }
+  previewFilter(pixels: Map<HTMLCanvasElement, HTMLCanvasElement> | null) {
+    const base = this.filterBase;
+    if (!base) return;
+    let next = base;
+    if (pixels) {
+      next = snapshot(base);
+      for (const layer of next.layers) {
+        const replaced = pixels.get(layer.canvas);
+        if (!replaced) continue;
+        layer.canvas = replaced;
+        layer.placement = undefined;
+      }
+    }
+    this.docs.set(this.activeId, next);
+    this.emit(true);
+  }
+  applyFilter(label: string) {
+    const base = this.filterBase;
+    if (!base) return;
+    this.filterBase = null;
+    if (this.doc !== base) this.history.push(label, base);
+    this.emit();
+  }
+  cancelFilter() {
+    const base = this.filterBase;
+    if (!base) return;
+    this.filterBase = null;
+    this.docs.set(this.activeId, base);
     this.emit(true);
   }
   makeLayer(c: HTMLCanvasElement, name: string): Layer {
