@@ -56,6 +56,15 @@ export function LayersPanel({ dockHandleProps }: { dockHandleProps?: HTMLAttribu
   const e = useEditor(),
     d = e.doc,
     l = e.layer;
+  const list = useRef<HTMLDivElement>(null), panelClick = useRef(0);
+  const islandKey = d ? `${d.id}:${d.uvSet}:${d.selectedIslands.join(",")}` : "";
+  useEffect(() => {
+    // Island picks from the 2D/3D views reveal the linked layer; clicks in this list already show it.
+    if (performance.now() - panelClick.current < 500 || !d?.selectedIslands.length) return;
+    const first = d.layers.slice().reverse().find(layer =>
+      layer.uvBinding?.uvSet === d.uvSet && d.selectedIslands.includes(layer.uvBinding.island.id));
+    if (first) list.current?.querySelector<HTMLElement>(`[data-layer-id="${CSS.escape(first.id)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [islandKey]);
   return (
     <div className="layers-panel">
       <div {...dockHandleProps} className="layers-drag-handle" />
@@ -81,8 +90,7 @@ export function LayersPanel({ dockHandleProps }: { dockHandleProps?: HTMLAttribu
             </option>
           ))}
         </select>
-        <label>
-          Opacity{" "}
+        <label title="Layer opacity">
           <input
             aria-label="Layer opacity"
             type="number"
@@ -103,15 +111,16 @@ export function LayersPanel({ dockHandleProps }: { dockHandleProps?: HTMLAttribu
           <span>%</span>
         </label>
       </div>
-      <div className="layer-list">
+      <div className="layer-list" ref={list}>
         {d?.layers
           .slice()
           .reverse()
           .map((layer) => (
             <div
               key={layer.id}
+              data-layer-id={layer.id}
               className={`layer-row ${d.activeId === layer.id ? "selected" : ""}`}
-              onClick={() => e.selectLayer(layer.id)}
+              onClick={() => { panelClick.current = performance.now(); e.selectLayer(layer.id); }}
               onDoubleClick={ev => {
                 if ((ev.target as HTMLElement).closest("button,input")) return;
                 e.selectLayer(layer.id); setRenaming(layer.id);
@@ -154,9 +163,9 @@ export function LayersPanel({ dockHandleProps }: { dockHandleProps?: HTMLAttribu
                     ev.preventDefault();ev.stopPropagation();e.selectLayer(layer.id);setRenaming(layer.id);
                   }
                 }}>{layer.name}</span>}
-              <small>{Math.round(layer.opacity * 100)}%</small>
-              {layer.uvBinding && <small className="layer-island-label" title={`Linked UV: ${layer.uvBinding.uvSet}`}>
-                Island {String(layer.uvBinding.island.id + 1).padStart(2, "0")}
+              {layer.uvBinding && <small className="layer-island-label"
+                title={`Linked UV island ${String(layer.uvBinding.island.id + 1).padStart(2, "0")} · ${layer.uvBinding.uvSet}`}>
+                {String(layer.uvBinding.island.id + 1).padStart(2, "0")}
               </small>}
             </div>
           ))}
@@ -167,6 +176,13 @@ export function LayersPanel({ dockHandleProps }: { dockHandleProps?: HTMLAttribu
       <div className="layer-footer">
         <Button title="Import image layer" disabled={e.busy} onClick={() => void e.run(() => e.openImage())}><ImagePlus size={15} /></Button>
         <Button title="New empty layer" disabled={!d} onClick={() => e.addEmpty()}><Plus size={15} /></Button>
+        <Button
+          title="Delete layer"
+          disabled={!l}
+          onClick={() => e.deleteLayer()}
+        >
+          <Trash2 size={14} />
+        </Button>
         <Button title={e.pickingLayerIsland ? "Cancel picking UV island (Escape)" : "Pick UV island from canvas or model"}
           disabled={!l || !d?.islands.length} aria-pressed={e.pickingLayerIsland} active={e.pickingLayerIsland}
           onClick={() => e.toggleIslandPicker()}><SquareMousePointer size={16} /></Button>
@@ -193,14 +209,6 @@ export function LayersPanel({ dockHandleProps }: { dockHandleProps?: HTMLAttribu
         </Button>
         <Button title="Merge down" disabled={!l || d?.layers[0] === l} onClick={() => e.mergeDown()}>
           <ArrowDownToLine size={15} />
-        </Button>
-        <div className="spacer" />
-        <Button
-          title="Delete layer"
-          disabled={!l}
-          onClick={() => e.deleteLayer()}
-        >
-          <Trash2 size={14} />
         </Button>
       </div>
     </div>

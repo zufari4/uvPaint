@@ -115,7 +115,7 @@ export function useShortcuts() {
       }
       if (
         /^Digit[0-9]$/.test(ev.code) &&
-        ["brush", "eraser", "clone", "fill"].includes(e.tool)
+        ["brush", "line", "eraser", "clone", "fill"].includes(e.tool)
       ) {
         e.brushOpacity = (Number(ev.code.slice(-1)) || 10) / 10;
         e.emit();
@@ -128,6 +128,7 @@ export function useShortcuts() {
         l: "lasso",
         w: "wand",
         b: "brush",
+        n: "line",
         e: "eraser",
         g: "fill",
         i: "eyedropper",

@@ -113,8 +113,10 @@ export function HelpDialog({ close }: { close: () => void }) {
           </dd>
           <dt>Paint</dt>
           <dd>
-            B brush · E eraser · G fill · I eyedropper
+            B brush · N line (Shift snaps to 45°) · E eraser · G fill · I eyedropper
             <br />S clone stamp, Alt-click to set source · [ / ] brush size
+            <br />
+            F resizes the brush: move the mouse, click or Enter applies, Esc / right-click cancels
             <br />
             Alt-click with Brush samples color · 1–9 / 0 opacity
             <br />D black/white · X swaps foreground/background
@@ -136,6 +138,8 @@ export function HelpDialog({ close }: { close: () => void }) {
             Ctrl+Z undo · Ctrl+Shift+Z / Ctrl+Y redo
             <br />
             Ctrl+O open GLB · Ctrl+Shift+S export PNG
+            <br />
+            PNG export extends island edges by half of the smallest gap between islands
             <br />
             Ctrl+S save project · Ctrl+Alt+S save as · Ctrl+Shift+O open project
           </dd>

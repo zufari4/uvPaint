@@ -32,6 +32,11 @@ import { faceKey } from "../tools/uv-guides";
 import { sourceGeometry } from "../render/mesh-source";
 import { encodeProject, decodeProject } from "./project";
 
+const insertAboveActive = (d: TextureDocument, layer: Layer) => {
+  const index = d.layers.findIndex((l) => l.id === d.activeId);
+  d.layers.splice(index < 0 ? d.layers.length : index + 1, 0, layer);
+};
+
 export class Editor {
   docs = new Map<string, TextureDocument>();
   textureDocuments = new Map<string, TextureDocument>();
@@ -75,7 +80,7 @@ export class Editor {
   notice: { id: number; text: string } | null = null;
   error = "";
   busy = false;
-  modelLoading: { name: string; stage: string; detail?: string } | null = null;
+  modelLoading: { name: string; stage: string; detail?: string; title?: string } | null = null;
   private modelProgressTime = 0;
   revision = 0;
   pixelsRevision = 0;
@@ -278,10 +283,13 @@ export class Editor {
     const file = await pickFile("project");
     if (file) await this.importProject(file.bytes, file.name, file.handle);
   }
-  async openRecentProject(id: string) {
+  async openRecentProject(id: string, name = "Recent project") {
     if (!window.desktop) return;
-    const file = await window.desktop.openRecentProject(id);
-    await this.importProject(file.bytes, file.name, file.handle);
+    try {
+      await this.reportModelLoading(name, "Reading project file", undefined, "Opening project");
+      const file = await window.desktop.openRecentProject(id);
+      await this.importProject(file.bytes, file.name, file.handle);
+    } finally { this.modelLoading = null;this.emit(); }
   }
   async projectBytes() {
     if (!this.doc) throw new Error("Create a texture or open a model first.");
@@ -313,8 +321,18 @@ export class Editor {
     this.notify(`Project saved: ${this.projectName}`);
   }
   async importProject(bytes: Uint8Array, name: string, handle?: string) {
-    // Decode and validate everything before replacing the current workspace.
-    const state = await decodeProject(bytes, (w, h) => this.checkSize(w, h));
+    try {
+      const progress = (stage: string, detail?: string) => this.reportModelLoading(name, stage, detail, "Opening project");
+      await progress("Reading project");
+      // Decode and validate everything before replacing the current workspace.
+      const state = await decodeProject(bytes, (w, h) => this.checkSize(w, h), progress);
+      await progress("Preparing textures and 3D preview");
+      this.installProject(state, name, handle);
+      await this.yieldModelLoading();
+    } finally { this.modelLoading = null;this.emit(); }
+    if (handle && window.desktop) await window.desktop.rememberProject(handle);
+  }
+  private installProject(state: Awaited<ReturnType<typeof decodeProject>>, name: string, handle?: string) {
     this.cancelTransform();
     if (this.model) disposeModel(this.model);
     this.model = state.model;
@@ -333,7 +351,6 @@ export class Editor {
     this.islandMenu = null;this.pickingLayerIsland = false;this.cloneSource = null;this.output = null;
     this.projectName = name;this.projectHandle = handle;
     this.emit(true);this.notify(`Project opened: ${name}`);
-    if (handle && window.desktop) await window.desktop.rememberProject(handle);
   }
   async importModel(bytes: Uint8Array, name: string, sourcePath?: string) {
     try {
@@ -415,11 +432,11 @@ export class Editor {
       await this.importModel(new Uint8Array(await file.arrayBuffer()), file.name, window.desktop?.modelFilePath(file) || undefined);
     } finally { this.modelLoading = null;this.emit(); }
   }
-  private async reportModelLoading(name: string, stage: string, detail?: string) {
+  private async reportModelLoading(name: string, stage: string, detail?: string, title?: string) {
     const now = performance.now();
     if (this.modelLoading?.name === name && this.modelLoading.stage === stage && now - this.modelProgressTime < 50) return;
     this.modelProgressTime = now;
-    this.modelLoading = { name, stage, detail };this.emit();
+    this.modelLoading = { name, stage, detail, title };this.emit();
     await this.yieldModelLoading();
   }
   private yieldModelLoading() {
@@ -591,7 +608,7 @@ export class Editor {
           canvas(d.width, d.height),
           `Layer ${d.layers.length + 1}`,
         );
-        d.layers.push(l);
+        insertAboveActive(d, l);
         d.activeId = l.id;
       });
   }
@@ -670,7 +687,7 @@ export class Editor {
       if (!target) {
         l.uvBinding = d.layers.find(layer => layer.id === d.activeId)?.uvBinding;
         l.uvMask = editingMask(d, false);
-        d.layers.push(l);
+        insertAboveActive(d, l);
       } else {
         l.canvas = c;
         l.placement = undefined;
@@ -846,7 +863,7 @@ export class Editor {
           const added = this.makeLayer(this.clipboard!, l.name + " fragment");
           added.uvMask = l.uvMask ?? editingMask(d, false);
           added.uvBinding = l.uvBinding;
-          d.layers.push(added);
+          insertAboveActive(d, added);
           d.activeId = added.id;
           d.selection = null;
         }
@@ -867,7 +884,7 @@ export class Editor {
       const l = this.makeLayer(c, "Pasted fragment");
       l.uvBinding = d.layers.find(layer => layer.id === d.activeId)?.uvBinding;
       l.uvMask = editingMask(d, false);
-      d.layers.push(l);
+      insertAboveActive(d, l);
       d.activeId = l.id;
       d.selection = null;
     });
@@ -1261,8 +1278,12 @@ export class Editor {
   async export() {
     this.confirmTransform();
     if (!this.doc) return;
-    const path = await exportPNG(this.doc);
-    if (path) this.notify(`Exported ${path}`);
+    const saved = await exportPNG(this.doc);
+    if (!saved) return;
+    const edge = saved.radius
+      ? ` · island edges extended by ${saved.radius} px${saved.padding !== null ? ` (min. padding ${saved.padding} px)` : ""}`
+      : saved.padding !== null ? ` · island padding ${saved.padding} px is too small to extend edges` : "";
+    this.notify(`Exported ${saved.path}${edge}`);
   }
 }
 export const editor = new Editor();

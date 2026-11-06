@@ -57,7 +57,7 @@ export function RecentProjectsMenu({ close }: { close: () => void }) {
     {open && <div ref={menu} id={id} className="recent-projects-popover" role="menu" aria-label="Recent projects">
       {!projects.length && <div className="recent-empty">{loading ? "Loading…" : "No recent projects"}</div>}
       {projects.map(project => <button key={project.id} role="menuitem" disabled={e.busy}
-        title={project.path} onClick={() => { close();void e.run(() => e.openRecentProject(project.id)); }}>
+        title={project.path} onClick={() => { close();void e.run(() => e.openRecentProject(project.id, project.name)); }}>
         <span>{project.name}</span><small>{project.path}</small>
       </button>)}
     </div>}

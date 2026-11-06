@@ -140,10 +140,6 @@ select {
   height: 33px;
   display: grid;
   place-items: center;
-  color: #9fe3cf;
-  background: #a2e3cb0b;
-  border: 1px solid #a4e4d232;
-  border-radius: 9px;
 }
 .brand strong {
   font-size: calc(18px * var(--ui-text-scale, 1.4));
@@ -395,6 +391,7 @@ select {
   cursor: grab;
 }
 .cursor-brush,
+.cursor-line,
 .cursor-eraser,
 .cursor-clone,
 .cursor-rect,
@@ -1484,6 +1481,11 @@ button.texture-expand:hover:not(:disabled), button.texture-expand:focus-visible 
 .layers-sidebar .layer-row { flex-wrap: wrap; column-gap: 3px; }
 .layers-sidebar .layer-row input { min-width: 60px; }
 .layers-sidebar .layer-island-label { margin-left: auto; margin-right: 8px; }
+/* The footer toolbar alone sets the panel width; names and the blend row fit inside it. */
+.inspector.layers-sidebar { width: max-content; }
+.layers-sidebar .layer-list, .layers-sidebar .layer-properties { contain: inline-size; }
+.layers-sidebar .layer-properties { gap: 6px; padding: 8px 6px; }
+.layers-sidebar .layer-footer { padding: 2px 6px; }
 .image-import-modal { width: min(1200px, 95vw); height: min(850px, 94vh); display: flex; flex-direction: column; overflow: hidden; gap: 10px; }
 .image-import-modal .modal-title { flex-shrink: 0; }
 .image-import-source { display: flex; gap: 16px; color: #a9b5c2; overflow-wrap: anywhere; }
@@ -1504,7 +1506,21 @@ button.texture-expand:hover:not(:disabled), button.texture-expand:focus-visible 
 .import-island-label { position:absolute; top:12px; left:12px; pointer-events:none; color:#c8e9df; }
 
 .brush-footprint { display: none; position: absolute; left: 0; top: 0; border: 1px solid #fff; box-shadow: 0 0 0 1px #111; border-radius: 50%; pointer-events: none; z-index: 3; box-sizing: border-box; }
-.cursor-brush > canvas, .cursor-eraser > canvas, .cursor-clone > canvas { cursor: none; }
+.cursor-brush > canvas, .cursor-line > canvas, .cursor-eraser > canvas, .cursor-clone > canvas { cursor: none; }
+.canvas-host:has(.brush-footprint[data-size]) > canvas { cursor: crosshair; }
+.brush-footprint[data-size]::after {
+  content: attr(data-size);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #111a;
+  color: #fff;
+  font-size: calc(10px * var(--ui-text-scale, 1.4));
+  white-space: nowrap;
+}
 
 .project-file-name { margin-left: 20px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aebbc4; font-size: calc(11px * var(--ui-text-scale, 1.4)); -webkit-app-region: drag; }
 

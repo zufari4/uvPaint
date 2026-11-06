@@ -85,6 +85,7 @@ export type Tool =
   | "polygon"
   | "wand"
   | "brush"
+  | "line"
   | "eraser"
   | "fill"
   | "eyedropper"

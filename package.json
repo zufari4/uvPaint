@@ -25,6 +25,8 @@
     "test:undo": "node scripts/regression-undo.mjs",
     "test:fill": "node scripts/regression-fill.mjs",
     "test:filter": "node scripts/regression-filter.mjs",
+    "test:line": "node scripts/regression-line.mjs",
+    "test:layers-panel": "node scripts/regression-layers-panel.mjs",
     "test:project": "node scripts/regression-project.mjs",
     "test:recent": "node scripts/regression-recent.mjs",
     "test:model-loading": "node scripts/regression-model-loading.mjs",
@@ -56,7 +58,7 @@
   },
   "build": {
     "appId": "studio.uvpaint.desktop",
-    "productName": "UV Paint",
+    "productName": "uvPaint",
     "directories": {
       "output": "release/current"
     },
@@ -67,7 +69,8 @@
     ],
     "asar": true,
     "win": {
-      "signAndEditExecutable": false
+      "icon": "build/icon.ico",
+      "signExecutable": false
     }
   }
 }

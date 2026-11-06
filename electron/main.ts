@@ -6,6 +6,8 @@ import { freemem } from "node:os";
 import { RecentProjects } from "./recent-projects";
 let win: BrowserWindow;
 const projectFiles = new Map<string, string>();
+// Keep settings and recent projects saved by releases named "UV Paint".
+if (!app.commandLine.hasSwitch("user-data-dir")) app.setPath("userData", join(app.getPath("appData"), "UV Paint"));
 app.whenReady().then(async () => {
   const recentProjects = new RecentProjects(join(app.getPath("userData"), "recent-projects.json"));
   await recentProjects.load();
@@ -18,7 +20,8 @@ app.whenReady().then(async () => {
     minWidth: 1120,
     minHeight: 720,
     backgroundColor: "#17191d",
-    title: "UV Paint",
+    title: "uvPaint",
+    icon: join(__dirname, "../dist/icon.ico"),
     frame: false,
     show: false,
     autoHideMenuBar: true,
@@ -50,7 +53,7 @@ app.whenReady().then(async () => {
       filters:
         kind === "model"
           ? [{ name: "Binary glTF", extensions: ["glb"] }]
-          : kind === "project" ? [{ name: "UV Paint project", extensions: ["uvpaint"] }] : [
+          : kind === "project" ? [{ name: "uvPaint project", extensions: ["uvpaint"] }] : [
               {
                 name: "Images",
                 extensions: ["png", "jpg", "jpeg", "webp", "bmp"],
@@ -123,7 +126,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("file:save-project", async (event, bytes, name, existingHandle) => {
     validate(event);
     if (!(bytes instanceof Uint8Array) || bytes.length < 16 || Buffer.from(bytes.subarray(0, 8)).toString("ascii") !== "UVPAINT1")
-      throw new Error("Expected a UV Paint project.");
+      throw new Error("Expected a uvPaint project.");
     if (existingHandle !== undefined && (typeof existingHandle !== "string" || !projectFiles.has(existingHandle)))
       throw new Error("Unknown project file. Use Save project as.");
     let target = existingHandle ? projectFiles.get(existingHandle)! : undefined;
@@ -131,7 +134,7 @@ app.whenReady().then(async () => {
       const safe = typeof name === "string" ? basename(name).replace(/[<>:\"/\\|?*]/g, "_") : "Project.uvpaint";
       const result = await dialog.showSaveDialog(win, {
         defaultPath: safe.toLowerCase().endsWith(".uvpaint") ? safe : `${safe}.uvpaint`,
-        filters: [{ name: "UV Paint project", extensions: ["uvpaint"] }],
+        filters: [{ name: "uvPaint project", extensions: ["uvpaint"] }],
       });
       if (result.canceled || !result.filePath) return null;
       target = result.filePath;

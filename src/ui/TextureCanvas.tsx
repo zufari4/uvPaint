@@ -4,7 +4,7 @@ import { ImagePlus, Maximize, Minimize2, Maximize2, Minus, Plus } from "lucide-r
 import { useEditor } from "./hooks";
 import { Button } from "./Button";
 import type { Point, SelectionMode } from "../types";
-import { canvas, context } from "../core/canvas";
+import { canvas, context, masked } from "../core/canvas";
 import { polygonMask } from "../tools/selection";
 import { selectionBounds, selectionHandles, selectionCursors, hitSelectionHandle, dragSelectionBounds, transformSelection, type SelectionBounds } from "../tools/selection-frame";
 import { traceIslands, hitIsland } from "../tools/uv";
@@ -40,6 +40,13 @@ type Gesture = {
   clientStart: Point;
   zoom: number;
 };
+const sizeTools = ["brush", "line", "eraser", "clone"];
+const snapAngle = (from: Point, to: Point) => {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+  const length = dx * Math.cos(angle) + dy * Math.sin(angle);
+  return { x: from.x + Math.cos(angle) * length, y: from.y + Math.sin(angle) * length };
+};
 export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean; onToggleExpand: () => void }) {
   const e = useEditor(),
     doc = e.doc;
@@ -54,12 +61,17 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
   const gesture = useRef<Gesture | null>(null);
   const brushCursor = useRef<HTMLDivElement>(null);
   const cursorPoint = useRef<Point | null>(null);
+  // Blender-style F resize: the ring is centred left of the pointer so the pointer starts on its edge.
+  const sizing = useRef<{ center: Point; original: number } | null>(null);
+  const endSizing = useRef<((cancel: boolean) => void) | null>(null);
   const updateBrushCursor = () => {
-    const ring = brushCursor.current, p = cursorPoint.current;
+    const ring = brushCursor.current, resize = sizing.current, p = resize?.center ?? cursorPoint.current;
     if (!ring) return;
-    const visible = !!doc && !!p && ["brush", "eraser", "clone"].includes(e.tool) &&
-      !space && !e.pickingLayerIsland && !e.imageImport && !e.islandMenu && gesture.current?.kind !== "pan";
+    const visible = !!doc && !!p && sizeTools.includes(e.tool) && (!!resize ||
+      (!space && !e.pickingLayerIsland && !e.imageImport && !e.islandMenu && gesture.current?.kind !== "pan"));
     ring.style.display = visible ? "block" : "none";
+    if (resize) ring.dataset.size = `${e.brushSize} px`;
+    else delete ring.dataset.size;
     if (!visible || !p) return;
     const diameter = Math.max(2, e.brushSize * zoom);
     ring.style.width = ring.style.height = `${diameter}px`;
@@ -79,6 +91,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     outline: HTMLCanvasElement;
   } | null>(null);
   const visibility = useRef(new TextureVisibility());
+  const outsideCache = useRef<{ source: HTMLCanvasElement; mask: HTMLCanvasElement; outside: HTMLCanvasElement } | null>(null);
   const fit = () => {
     if (doc) {
       setZoom(
@@ -126,9 +139,53 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     }
   }
   useEffect(() => {
+    const startSizing = () => {
+      const p = cursorPoint.current!;
+      const state = { center: { x: p.x - (e.brushSize * zoom) / 2, y: p.y }, original: e.brushSize };
+      sizing.current = state;
+      const resize = (ev: PointerEvent) => {
+        const r = host.current!.getBoundingClientRect();
+        const radius = Math.hypot(ev.clientX - r.left - state.center.x, ev.clientY - r.top - state.center.y);
+        e.brushSize = Math.max(1, Math.min(5000, Math.round((2 * radius) / zoom)));
+        e.emit();
+      };
+      const block = (ev: Event) => { ev.preventDefault(); ev.stopPropagation(); };
+      const press = (ev: PointerEvent) => {
+        block(ev);
+        // The context menu of a cancelling right-click arrives after pointerdown.
+        if (ev.button === 2) window.addEventListener("contextmenu", block, { capture: true, once: true });
+        end(ev.button !== 0);
+      };
+      const keys = (ev: KeyboardEvent) => {
+        if (ev.key !== "Escape" && ev.key !== "Enter" && ev.code !== "KeyF") return;
+        block(ev);
+        end(ev.key === "Escape");
+      };
+      const end = (cancel: boolean) => {
+        window.removeEventListener("pointermove", resize);
+        window.removeEventListener("pointerdown", press, true);
+        window.removeEventListener("keydown", keys, true);
+        sizing.current = null;
+        endSizing.current = null;
+        if (cancel) e.brushSize = state.original;
+        e.emit();
+        updateBrushCursor();
+      };
+      window.addEventListener("pointermove", resize);
+      window.addEventListener("pointerdown", press, true);
+      window.addEventListener("keydown", keys, true);
+      endSizing.current = end;
+      updateBrushCursor();
+    };
     const down = (ev: KeyboardEvent) => {
       if (ev.defaultPrevented || document.querySelector(".modal-backdrop")) return;
       if ((ev.target as HTMLElement).matches("input,select,textarea")) return;
+      if (ev.code === "KeyF" && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.shiftKey && !ev.repeat &&
+        doc && sizeTools.includes(e.tool) && cursorPoint.current && !gesture.current && !sizing.current) {
+        ev.preventDefault();
+        startSizing();
+        return;
+      }
       if (ev.code === "Space") {
         ev.preventDefault();
         setSpace(true);
@@ -151,6 +208,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       if (ev.code === "Space") setSpace(false);
     };
     const blur = () => {
+      endSizing.current?.(true);
       setSpace(false);
       if (gesture.current?.stroke) gesture.current.stroke.finish();
       if (gesture.current?.kind === "transform") e.flushTransform();
@@ -162,6 +220,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     window.addEventListener("keyup", up);
     window.addEventListener("blur", blur);
     return () => {
+      endSizing.current?.(false);
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
@@ -193,14 +252,25 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
         if ((Math.round(x / tile) + Math.round(y / tile)) % 2 === 0)
           ctx.fillRect(x, y, Math.min(tile, w - x), Math.min(tile, h - y));
     visibility.current.update(doc, e.textureHiddenFaces, e.visibleIslands, e.textureIsolated);
-    const visibleTexture = visibility.current.render(e.output, e.layer?.visible ? e.transform?.outside : undefined, 0.4 * (e.layer?.opacity ?? 0));
+    const layer = e.layer;
+    let outside: HTMLCanvasElement | undefined;
+    if (layer?.visible && e.transform) outside = e.transform.outside;
+    else if (layer?.visible && layer.uvMask && e.textureIsolated) {
+      const cached = outsideCache.current;
+      if (cached?.source !== layer.canvas || cached.mask !== layer.uvMask)
+        outsideCache.current = { source: layer.canvas, mask: layer.uvMask, outside: masked(layer.canvas, layer.uvMask, true) };
+      outside = outsideCache.current!.outside;
+    }
+    // Pixels beyond the island stay faintly visible, except where the user hid faces manually.
+    const faint = !e.hiddenFaces.size, outsideAlpha = 0.4 * (layer?.opacity ?? 0);
+    const visibleTexture = visibility.current.render(e.output, faint ? undefined : outside, outsideAlpha);
     // Magnified texels stay crisp so pixel-level edits (e.g. pixelation) are visible.
     ctx.imageSmoothingEnabled = zoom < 1;
     if (visibleTexture ?? e.output) ctx.drawImage((visibleTexture ?? e.output)!, 0, 0);
-    if (!visibleTexture && e.transform?.outside && e.layer?.visible) {
+    if (outside && (faint || !visibleTexture)) {
       ctx.save();
-      ctx.globalAlpha = 0.4 * e.layer.opacity;
-      ctx.drawImage(e.transform.outside, 0, 0);
+      ctx.globalAlpha = outsideAlpha;
+      ctx.drawImage(outside, 0, 0);
       ctx.restore();
     }
     ctx.imageSmoothingEnabled = true;
@@ -429,7 +499,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       e.fill(p);
       return;
     }
-    if (e.tool === "eyedropper" || (e.tool === "brush" && ev.altKey)) {
+    if (e.tool === "eyedropper" || ((e.tool === "brush" || e.tool === "line") && ev.altKey)) {
       e.pickColor(p);
       return;
     }
@@ -438,7 +508,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       e.emit();
       return;
     }
-    if (["brush", "eraser", "clone"].includes(e.tool)) {
+    if (sizeTools.includes(e.tool)) {
       if (!e.layer) {
         e.fail("Select a layer or add an empty layer before painting.");
         return;
@@ -502,7 +572,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       return;
     }
     if (g.kind === "paint") {
-      g.stroke!.draw(p);
+      g.stroke!.draw(e.tool === "line" && ev.shiftKey ? snapAngle(g.start, p) : p);
       return;
     }
     if (g.kind === "selection-frame") {

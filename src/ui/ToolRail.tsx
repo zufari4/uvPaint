@@ -5,6 +5,7 @@ import {
   PenTool,
   WandSparkles,
   Paintbrush,
+  Slash,
   Eraser,
   PaintBucket,
   Pipette,
@@ -22,6 +23,7 @@ const items: [Tool, typeof Move, string][] = [
   ["polygon", PenTool, "Polygonal lasso (Shift+L) · Enter closes"],
   ["wand", WandSparkles, "Magic wand (W)"],
   ["brush", Paintbrush, "Brush (B)"],
+  ["line", Slash, "Line (N) · Shift snaps to 45°"],
   ["eraser", Eraser, "Eraser (E)"],
   ["fill", PaintBucket, "Fill (G)"],
   ["eyedropper", Pipette, "Eyedropper (I)"],
@@ -34,7 +36,7 @@ export function ToolRail() {
   return (
     <aside className="tool-rail">
       {items.map(([tool, Icon, title], i) => (
-        <div className={i === 5 || i === 10 ? "tool-separator" : ""} key={tool}>
+        <div className={i === 5 || i === 11 ? "tool-separator" : ""} key={tool}>
           <Button
             title={title}
             active={e.tool === tool}

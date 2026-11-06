@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEditor } from "./hooks";
 import { useShortcuts } from "./shortcuts";
 import { Button } from "./Button";
@@ -51,10 +51,10 @@ export function App() {
       <header className="app-header">
         <div className="brand">
           <div className="brand-mark">
-            <Box size={22} strokeWidth={1.5} />
+            <img src={`${import.meta.env.BASE_URL}icon.png`} width={30} height={30} alt="" />
           </div>
           <strong>
-            uv<span>paint</span>
+            uv<span>Paint</span>
           </strong>
         </div>
         {e.projectName && <span className="project-file-name" title={e.projectName}>{e.projectName}</span>}

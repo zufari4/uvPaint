@@ -1,4 +1,4 @@
-import { X, Box } from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "./Button";
 import { version } from "../../package.json";
 export function AboutDialog({ close }: { close: () => void }) {
@@ -17,14 +17,14 @@ export function AboutDialog({ close }: { close: () => void }) {
         }}
       >
         <div className="modal-title">
-          <h2 id="about-title">About UV Paint</h2>
+          <h2 id="about-title">About uvPaint</h2>
           <Button autoFocus title="Close about" onClick={close}>
             <X size={18} />
           </Button>
         </div>
         <div className="about-brand">
-          <Box size={42} />
-          <strong>UV Paint</strong>
+          <img src={`${import.meta.env.BASE_URL}icon.png`} width={48} height={48} alt="" />
+          <strong>uvPaint</strong>
         </div>
         <p>Version {version}</p>
         <p>Texture painting with UV guides and a live 3D preview.</p>

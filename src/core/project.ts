@@ -1,7 +1,7 @@
 import type { Island, Layer, ModelAsset, Point, TextureDocument, Tool } from "../types";
 import { toPNG } from "./canvas";
 import { decodeImage } from "../import/files";
-import { disposeModel, loadGLB } from "../import/model";
+import { disposeModel, loadGLB, type ModelProgress } from "../import/model";
 import { demoModel } from "../import/demo";
 import { sourceGeometry } from "../render/mesh-source";
 import { guideEdges } from "../tools/uv-guides";
@@ -80,7 +80,7 @@ export async function encodeProject(state: ProjectState): Promise<Uint8Array> {
 }
 
 function requireValue(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(`Invalid UV Paint project: ${message}`);
+  if (!condition) throw new Error(`Invalid uvPaint project: ${message}`);
 }
 const record = (v: unknown) => v !== null && typeof v === "object" && !Array.isArray(v);
 const text = (v: unknown): v is string => typeof v === "string";
@@ -89,14 +89,14 @@ const finite = (v: unknown): v is number => typeof v === "number" && Number.isFi
 const uv = (v: unknown): v is string => text(v) && /^uv\d*$/.test(v);
 const point = (p: unknown): p is Point => record(p) && finite((p as Point).x) && finite((p as Point).y);
 
-export async function decodeProject(bytes: Uint8Array, checkSize: (w: number, h: number) => Promise<void>): Promise<ProjectState> {
+export async function decodeProject(bytes: Uint8Array, checkSize: (w: number, h: number) => Promise<void>, progress?: ModelProgress): Promise<ProjectState> {
   requireValue(bytes.length >= 16 && magic.every((v, i) => bytes[i] === v), "unrecognized file header.");
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const jsonLength = view.getUint32(8, true), count = view.getUint32(12, true);
   requireValue(jsonLength <= 64 * 1024 * 1024 && jsonLength <= bytes.length - 16 && count <= (bytes.length - 16 - jsonLength) / 4, "truncated header.");
   let manifest: Manifest;
   try { manifest = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(16, 16 + jsonLength))); }
-  catch { throw new Error("Invalid UV Paint project: unreadable manifest."); }
+  catch { throw new Error("Invalid uvPaint project: unreadable manifest."); }
   requireValue(record(manifest) && manifest.format === "UV Paint project" && manifest.version === 1, "unsupported project version.");
   requireValue(Array.isArray(manifest.assets) && manifest.assets.length === count && Array.isArray(manifest.documents) && manifest.documents.length > 0, "missing assets or documents.");
   const chunks: Uint8Array[] = []; let offset = 16 + jsonLength;
@@ -123,6 +123,7 @@ export async function decodeProject(bytes: Uint8Array, checkSize: (w: number, h:
   const available = await window.desktop?.memory();
   requireValue(Number.isSafeInteger(memory) && (!available || memory * 2 < available * .8), "not enough memory for the project images.");
   const decoded = new Map<number, HTMLCanvasElement>();
+  const images = manifest.assets.filter(a => a.kind === "png").length;
   const image = async (id: number | null, w?: number, h?: number) => {
     if (id === null) return null;
     requireValue(int(id) && id < count && manifest.assets[id].kind === "png", "invalid image reference.");
@@ -130,6 +131,7 @@ export async function decodeProject(bytes: Uint8Array, checkSize: (w: number, h:
     if (w !== undefined) requireValue(asset.width === w && asset.height === h, "layer image dimensions differ from the document.");
     if (!decoded.has(id)) {
       await checkSize(asset.width, asset.height);
+      await progress?.("Decoding layer images", `${decoded.size + 1} / ${images}`);
       const pixels = await decodeImage(chunks[id]);
       requireValue(pixels.width === asset.width && pixels.height === asset.height, "decoded image size mismatch.");
       decoded.set(id, pixels);
@@ -147,7 +149,7 @@ export async function decodeProject(bytes: Uint8Array, checkSize: (w: number, h:
         Array.isArray(saved.visible) && saved.visible.every(v => typeof v === "boolean"), "invalid model metadata.");
       if (saved.kind === "glb") {
         requireValue(int(saved.asset) && saved.asset < count && manifest.assets[saved.asset].kind === "glb", "missing embedded model.");
-        model = (await loadGLB(new Uint8Array(chunks[saved.asset]).buffer, saved.name, checkSize)).model;
+        model = (await loadGLB(new Uint8Array(chunks[saved.asset]).buffer, saved.name, checkSize, progress)).model;
         requireValue(saved.sourcePath === undefined || text(saved.sourcePath), "invalid source GLB path.");
         if (model.source?.kind === "glb") model.source.path = saved.sourcePath;
       } else model = (await demoModel(checkSize)).model;
@@ -247,7 +249,7 @@ export async function decodeProject(bytes: Uint8Array, checkSize: (w: number, h:
     }));
     requireValue(["studio", "unlit"].includes(manifest.previewMode) && typeof manifest.previewEdges === "boolean", "invalid preview settings.");
     const paint = manifest.paint;
-    requireValue(record(paint) && ["move", "rect", "lasso", "polygon", "wand", "brush", "eraser", "fill", "eyedropper", "clone", "island", "pan"].includes(paint.tool) &&
+    requireValue(record(paint) && ["move", "rect", "lasso", "polygon", "wand", "brush", "line", "eraser", "fill", "eyedropper", "clone", "island", "pan"].includes(paint.tool) &&
       text(paint.color) && /^#[0-9a-f]{6}$/i.test(paint.color) && text(paint.backgroundColor) && /^#[0-9a-f]{6}$/i.test(paint.backgroundColor) &&
       finite(paint.brushSize) && paint.brushSize >= 1 && finite(paint.brushOpacity) && paint.brushOpacity >= 0 && paint.brushOpacity <= 1 &&
       finite(paint.tolerance) && paint.tolerance >= 0 && paint.tolerance <= 255 && typeof paint.contiguous === "boolean", "invalid paint settings.");

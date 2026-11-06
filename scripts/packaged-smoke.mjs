@@ -6,7 +6,7 @@ const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.UVPAINT_DEV_URL;
 const app = await electron.launch({
-  executablePath: path.resolve(process.env.UVPAINT_EXECUTABLE ?? "release/current/win-unpacked/UV Paint.exe"),
+  executablePath: path.resolve(process.env.UVPAINT_EXECUTABLE ?? "release/current/win-unpacked/uvPaint.exe"),
   args: [`--user-data-dir=${path.resolve("test-results/packaged-profile")}`],
   env,
 });

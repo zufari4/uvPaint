@@ -34,8 +34,10 @@ try {
   await submenu.getByTitle(a,{exact:true}).hover();
   check(await submenu.isVisible(),'Pointer can move from Recent into its submenu');
   check(await submenu.getByTitle(a,{exact:true}).isVisible(),'Recent entries display the project path');
+  await page.evaluate(()=>{window.loadingTitles=new Set();new MutationObserver(()=>{const s=document.querySelector('.model-loading strong');if(s)loadingTitles.add(s.textContent);}).observe(document.body,{subtree:true,childList:true,characterData:true});});
   await submenu.getByTitle(a,{exact:true}).click();await page.waitForFunction(()=>!e.busy&&e.projectName==='Recent А.uvpaint');
   check((await list())[0].path===a,'Clicking Recent opens the project directly and promotes it to first place');
+  check(await page.evaluate(()=>loadingTitles.has('Opening project')&&!document.querySelector('.model-loading')),'Opening a recent project shows the loading window until it is ready');
   await app.evaluate(({dialog})=>{dialog.showSaveDialog=async()=>{throw Error('Recent project should retain its save handle');};});
   await page.evaluate(()=>e.saveProject());check((await readFile(a)).length>16,'Project opened from Recent saves back to its original path');
   const bytes=await readFile(b);await writeFile(b,'invalid project');

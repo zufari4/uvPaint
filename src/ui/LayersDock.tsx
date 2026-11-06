@@ -27,7 +27,8 @@ export function LayersDock() {
     return () => { window.removeEventListener("keydown", escape, true); window.removeEventListener("blur", cancel); };
   }, []);
   return <>
-    {preview && <div className="layers-dock-preview" data-dock={preview} aria-hidden="true" />}
+    {preview && <div className="layers-dock-preview" data-dock={preview} aria-hidden="true"
+      style={{ width: panel.current?.offsetWidth, height: panel.current?.offsetHeight }} />}
     <div ref={panel} className={`inspector layers-sidebar${preview ? " docking" : ""}`} data-dock={dock}>
       <LayersPanel dockHandleProps={{
         tabIndex: 0,

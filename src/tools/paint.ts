@@ -18,6 +18,7 @@ export class PaintStroke {
   private working: HTMLCanvasElement;
   private clipped: HTMLCanvasElement;
   private dirty: { left: number; top: number; right: number; bottom: number } | null = null;
+  private lineBounds: { left: number; top: number; right: number; bottom: number } | null = null;
   private frame = 0;
   private ended = false;
   private tool: Editor["tool"];
@@ -66,32 +67,60 @@ export class PaintStroke {
     if (this.ended) return;
     const e = this.editor,
       ctx = context(this.ink);
-    const distance = Math.hypot(p.x - this.last.x, p.y - this.last.y),
-      steps = Math.max(1, Math.ceil(distance / Math.max(1, e.brushSize / 5)));
-    for (let i = 1; i <= steps; i++) {
-      const x = this.last.x + ((p.x - this.last.x) * i) / steps,
-        y = this.last.y + ((p.y - this.last.y) * i) / steps;
+    // A line redraws its whole segment from the press point on every move.
+    const from = this.tool === "line" ? this.start : this.last;
+    if (this.tool === "line") {
+      ctx.clearRect(0, 0, this.ink.width, this.ink.height);
       ctx.save();
+      ctx.fillStyle = ctx.strokeStyle = e.color;
       ctx.beginPath();
-      ctx.arc(x, y, e.brushSize / 2, 0, Math.PI * 2);
-      if (this.clone && e.cloneSource) {
-        ctx.clip();
-        const dx = this.start.x - e.cloneSource.x,
-          dy = this.start.y - e.cloneSource.y;
-        ctx.drawImage(this.clone, dx, dy);
-      } else {
-        ctx.fillStyle = e.color;
+      if (from.x === p.x && from.y === p.y) {
+        ctx.arc(p.x, p.y, e.brushSize / 2, 0, Math.PI * 2);
         ctx.fill();
+      } else {
+        ctx.lineCap = "round";
+        ctx.lineWidth = e.brushSize;
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
       }
       ctx.restore();
+    } else {
+      const distance = Math.hypot(p.x - from.x, p.y - from.y),
+        steps = Math.max(1, Math.ceil(distance / Math.max(1, e.brushSize / 5)));
+      for (let i = 1; i <= steps; i++) {
+        const x = from.x + ((p.x - from.x) * i) / steps,
+          y = from.y + ((p.y - from.y) * i) / steps;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, e.brushSize / 2, 0, Math.PI * 2);
+        if (this.clone && e.cloneSource) {
+          ctx.clip();
+          const dx = this.start.x - e.cloneSource.x,
+            dy = this.start.y - e.cloneSource.y;
+          ctx.drawImage(this.clone, dx, dy);
+        } else {
+          ctx.fillStyle = e.color;
+          ctx.fill();
+        }
+        ctx.restore();
+      }
     }
     const pad = e.brushSize / 2 + 2;
     const bounds = {
-      left: Math.max(0, Math.floor(Math.min(this.last.x, p.x) - pad)),
-      top: Math.max(0, Math.floor(Math.min(this.last.y, p.y) - pad)),
-      right: Math.min(this.base.width, Math.ceil(Math.max(this.last.x, p.x) + pad)),
-      bottom: Math.min(this.base.height, Math.ceil(Math.max(this.last.y, p.y) + pad)),
+      left: Math.max(0, Math.floor(Math.min(from.x, p.x) - pad)),
+      top: Math.max(0, Math.floor(Math.min(from.y, p.y) - pad)),
+      right: Math.min(this.base.width, Math.ceil(Math.max(from.x, p.x) + pad)),
+      bottom: Math.min(this.base.height, Math.ceil(Math.max(from.y, p.y) + pad)),
     };
+    if (this.lineBounds) {
+      const old = this.lineBounds;
+      this.dirty = this.dirty ? {
+        left: Math.min(this.dirty.left, old.left), top: Math.min(this.dirty.top, old.top),
+        right: Math.max(this.dirty.right, old.right), bottom: Math.max(this.dirty.bottom, old.bottom),
+      } : old;
+    }
+    if (this.tool === "line") this.lineBounds = bounds;
     if (bounds.right > bounds.left && bounds.bottom > bounds.top) {
       const old = this.dirty;
       this.dirty = old ? {
@@ -140,7 +169,9 @@ export class PaintStroke {
         ? "Erase"
         : this.tool === "clone"
           ? "Clone stamp"
-          : "Brush stroke",
+          : this.tool === "line"
+            ? "Line"
+            : "Brush stroke",
       this.before,
     );
     this.editor.emit();

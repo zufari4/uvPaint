@@ -32,6 +32,7 @@ export function OptionsBar() {
             polygon: "Polygon lasso",
             wand: "Magic wand",
             brush: "Brush",
+            line: "Line",
             eraser: "Eraser",
             fill: "Fill",
             eyedropper: "Eyedropper",
@@ -41,7 +42,7 @@ export function OptionsBar() {
           }[e.tool]
         }
       </span>
-      {["brush", "fill", "eyedropper"].includes(e.tool) && (
+      {["brush", "line", "fill", "eyedropper"].includes(e.tool) && (
         <label className="color-swatch" title="Paint color">
           <input
             aria-label="Paint color"
@@ -138,10 +139,10 @@ export function OptionsBar() {
           </label>
         </>
       )}
-      {["brush", "eraser", "clone", "fill"].includes(e.tool) && (
+      {["brush", "line", "eraser", "clone", "fill"].includes(e.tool) && (
         <>
           {e.tool !== "fill" && (
-          <label>
+          <label title="F: drag to resize, click to apply">
             Size{" "}
             <input
               aria-label="Brush size"
@@ -176,6 +177,9 @@ export function OptionsBar() {
           </label>
           {e.tool === "clone" && (
             <span className="options-hint">Alt-click to set source</span>
+          )}
+          {e.tool === "line" && (
+            <span className="options-hint">Drag to draw · Shift snaps to 45°</span>
           )}
         </>
       )}
