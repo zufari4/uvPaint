@@ -7,7 +7,7 @@ const app=await electron.launch({args:['.',`--user-data-dir=${process.cwd()}/tes
 try {
   const page=await app.firstWindow();await page.waitForSelector('.empty-canvas');
   await page.evaluate(async()=>{window.__e=(await import('/src/core/editor.ts')).editor;});
-  await page.evaluate(async()=>{const e=window.__e;await e.newCanvas(100,100);e.addEmpty();e.color='#ff0000';e.brushSize=4;e.brushOpacity=1;e.setShape({kind:'line',fill:'none',outline:true,sides:6});});
+  await page.evaluate(async()=>{const e=window.__e;await e.newCanvas(100,100);e.addEmpty();e.color='#ff0000';e.brushSize=4;e.brushOpacity=1;e.setShape({kind:'line',fill:'none',outline:true,width:4,sides:6});});
   await page.keyboard.press('n');
   assert.equal(await page.evaluate(()=>window.__e.tool),'line');
   await page.getByTitle('Fit canvas',{exact:true}).click();
@@ -47,7 +47,9 @@ try {
     return points.map(([x,y])=>[...d.getImageData(x,y,1,1).data]);},points);
   await pickShape('Rectangle');
   assert.equal(await page.evaluate(()=>window.__e.tool+'/'+window.__e.shape.kind),'line/rect');
-  await page.evaluate(()=>{window.__e.addEmpty();window.__e.brushSize=2;});
+  await page.evaluate(()=>{window.__e.addEmpty();window.__e.brushSize=9;});
+  await page.getByLabel('Outline width').fill('2');
+  assert.equal(await page.getByLabel('Brush size').count(),0,'shapes use the outline width instead of the brush size');
   await drag([20,20],[60,50]);
   const rect=await alpha([[20,35],[40,20],[40,35],[70,35]]);
   assert.ok(rect[0][3]>100&&rect[1][3]>100,'rectangle outline is drawn');
@@ -75,6 +77,33 @@ try {
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('uvpaint.toolOptions')).shape.kind),'polygon','chosen shape is remembered');
   assert.match(await page.locator('.tool-shapes > button').getAttribute('title'),/^Regular polygon \(N\)/);
   console.log('PASS Regular polygon uses the side count and the chosen shape is remembered');
+  await pickShape('Rectangle');
+  await page.getByLabel('Shape fill').selectOption('none');
+  await page.evaluate(()=>{const e=window.__e;e.addEmpty();
+    const square=(id,x0,x1)=>({id,triangles:[[{x:x0,y:.1},{x:x1,y:.1},{x:x1,y:.9}],[{x:x0,y:.1},{x:x1,y:.9},{x:x0,y:.9}]]});
+    e.doc.islands=[square(0,.1,.4),square(1,.6,.9)];e.setLayerIsland(0);
+    // Synthetic islands have no model faces; pretend the island focus is shown.
+    Object.defineProperty(e,'textureIsolated',{configurable:true,get:()=>e.textureFocusEnabled});});
+  assert.ok(await page.evaluate(()=>window.__e.textureIsolated),'linked island focus is active');
+  await drag([20,30],[80,60]);
+  const linked=await page.evaluate(()=>{const e=window.__e,l=e.layer.canvas.getContext('2d'),o=e.output.getContext('2d');
+    return {inside:l.getImageData(20,45,1,1).data[3],beyond:l.getImageData(80,45,1,1).data[3],shown:o.getImageData(80,45,1,1).data[3],focus:e.textureIsolated};});
+  assert.ok(linked.inside>100&&linked.beyond>100,'shape pixels beyond the island are kept on the linked layer');
+  assert.equal(linked.shown,0,'the island mask hides them in the texture output');
+  assert.ok(linked.focus,'drawing a shape keeps the island focus');
+  await pickShape('Line');
+  b=await page.getByTestId('texture-canvas').boundingBox();
+  await page.mouse.click(...screen(50,5));
+  assert.ok(await page.evaluate(()=>window.__e.textureIsolated&&!!window.__e.lineEdit),'placing a line point outside the island does not show all layers');
+  await page.keyboard.press('Escape');
+  console.log('PASS Shapes extend beyond linked islands without leaving island focus');
+  await page.evaluate(()=>{const e=window.__e;delete e.textureIsolated;e.setLayerIsland(null);e.doc.islands=[];e.emit();});
+  await page.evaluate(()=>{const e=window.__e;e.setTool('move');e.beginTransform('free');});
+  const width=page.getByLabel('Transform width percent');
+  await width.fill('');await width.pressSequentially('50');
+  assert.equal(await page.getByLabel('Transform height percent').inputValue(),'50','locked proportions survive clearing and retyping the width');
+  await page.keyboard.press('Escape');
+  console.log('PASS Lock proportions keeps the height in sync while typing');
   await pickShape('Line');
   await page.evaluate(()=>{window.__e.brushSize=4;});
   await page.keyboard.press('b');

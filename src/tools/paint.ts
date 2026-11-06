@@ -55,7 +55,8 @@ export class PaintStroke {
     this.working = canvas(d.width, d.height, false);
     context(this.working).drawImage(this.base, 0, 0);
     this.clipped = canvas(d.width, d.height, false);
-    this.clip = editingMask(d);
+    // Shapes on island-linked layers keep their pixels beyond the island; the layer mask hides them.
+    this.clip = editor.tool === "line" && layer.uvBinding ? d.selection ?? null : editingMask(d);
     this.last = this.start = p;
     this.tool = editor.tool;
     this.clone = this.tool === "clone" ? this.base : null;
@@ -76,15 +77,15 @@ export class PaintStroke {
     const from = this.tool === "line" ? this.start : this.last;
     let box = { left: Math.min(from.x, p.x), top: Math.min(from.y, p.y), right: Math.max(from.x, p.x), bottom: Math.max(from.y, p.y) };
     if (this.tool === "line") {
-      const shape = e.shape;
+      const shape = e.shape, width = shape.kind === "line" ? e.brushSize : shape.width;
       ctx.clearRect(0, 0, this.ink.width, this.ink.height);
       ctx.save();
       ctx.fillStyle = ctx.strokeStyle = e.color;
-      ctx.lineWidth = e.brushSize;
+      ctx.lineWidth = width;
       ctx.lineCap = "round";
       ctx.beginPath();
       if (from.x === p.x && from.y === p.y) {
-        ctx.arc(p.x, p.y, e.brushSize / 2, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, width / 2, 0, Math.PI * 2);
         ctx.fill();
       } else if (shape.kind === "line") {
         ctx.moveTo(from.x, from.y);
@@ -140,7 +141,7 @@ export class PaintStroke {
       }
     }
     // Miter joins reach beyond half the outline width at shape corners.
-    const pad = e.brushSize * (this.tool === "line" && e.shape.kind !== "line" ? 2 : 0.5) + 2;
+    const pad = this.tool === "line" && e.shape.kind !== "line" ? e.shape.width * 2 + 2 : e.brushSize / 2 + 2;
     const bounds = {
       left: Math.max(0, Math.floor(box.left - pad)),
       top: Math.max(0, Math.floor(box.top - pad)),

@@ -17,15 +17,19 @@ import { Button } from "./Button";
 export function OptionsBar() {
   const e = useEditor();
   // Typed values wait for Set; otherwise the fields follow the frame while it is dragged.
-  const [draft, setDraft] = useState<{ w: number; h: number; angle: number } | null>(null),
+  const [draft, setDraft] = useState<{ w: number; h: number; angle: number; ratio: number } | null>(null),
     [linked, setLinked] = useState(true);
   const frame = e.frameGeometry;
-  const live = { w: Math.round(frame?.width ?? 100), h: Math.round(frame?.height ?? 100), angle: Math.round((frame?.angle ?? 0) * 10) / 10 };
+  const live = {
+    w: Math.round(frame?.width ?? 100), h: Math.round(frame?.height ?? 100), angle: Math.round((frame?.angle ?? 0) * 10) / 10,
+    ratio: frame?.width && frame.height ? frame.height / frame.width : 1,
+  };
   const shown = draft ?? live;
   const sx = shown.w, sy = shown.h, angle = shown.angle;
   const edit = (patch: Partial<typeof live>) => setDraft({ ...shown, ...patch });
-  const setSx = (w: number) => edit(linked ? { w, h: Math.round((w * shown.h) / (shown.w || 1)) } : { w });
-  const setSy = (h: number) => edit(linked ? { h, w: Math.round((h * shown.w) / (shown.h || 1)) } : { h });
+  // The ratio is kept separately so cleared or partly typed values cannot destroy it.
+  const setSx = (w: number) => edit(linked ? { w, h: Math.round(w * shown.ratio) } : { w });
+  const setSy = (h: number) => edit(linked ? { h, w: Math.round(h / shown.ratio) } : { h });
   const setAngle = (value: number) => edit({ angle: value });
   useEffect(() => setDraft(null), [e.transform]);
   const selection = ["rect", "lasso", "polygon", "wand"].includes(e.tool);
@@ -149,7 +153,7 @@ export function OptionsBar() {
       )}
       {["brush", "line", "eraser", "clone", "fill"].includes(e.tool) && (
         <>
-          {e.tool !== "fill" && (
+          {e.tool !== "fill" && !(e.tool === "line" && e.shape.kind !== "line") && (
           <label title="F: drag to resize, click to apply">
             Size{" "}
             <input
@@ -214,11 +218,17 @@ export function OptionsBar() {
                   <option value="secondary">Secondary color</option>
                 </select>
               </label>
-              <label title="Outline in the primary color, Size sets its width">
+              <label title="Outline in the primary color">
                 <input type="checkbox" aria-label="Shape outline" checked={e.shape.outline}
                   disabled={e.shape.fill === "none"}
                   onChange={ev => e.setShape({ outline: ev.target.checked })} />{" "}
                 Outline
+              </label>
+              <label title="Outline width">
+                <input aria-label="Outline width" type="number" min="1" max="1000" value={e.shape.width}
+                  disabled={!e.shape.outline}
+                  onChange={ev => e.setShape({ width: Math.max(1, Math.min(1000, +ev.target.value || 1)) })} />{" "}
+                px
               </label>
               {e.shape.kind === "polygon" && (
                 <label>
@@ -294,7 +304,10 @@ export function OptionsBar() {
               aria-label="Lock proportions"
               type="checkbox"
               checked={linked}
-              onChange={(ev) => setLinked(ev.target.checked)}
+              onChange={(ev) => {
+                setLinked(ev.target.checked);
+                if (ev.target.checked && draft && draft.w > 0 && draft.h > 0) setDraft({ ...draft, ratio: draft.h / draft.w });
+              }}
             />
             ↔
           </label>

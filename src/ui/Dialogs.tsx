@@ -102,7 +102,7 @@ export function HelpDialog({ close }: { close: () => void }) {
             <br />
             V: click selects an island and linked layer · Drag moves the image
             <br />
-            Shift unlocks proportions / snaps rotation · Alt from center
+            Shift unlocks proportions / snaps rotation / moves along one axis · Alt from center
             <br />
             Ctrl snaps rotation to 5° and movement to 10 texture pixels
             <br />Press Ctrl after starting a scale drag to snap size to 10 pixels

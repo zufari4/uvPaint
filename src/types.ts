@@ -98,6 +98,7 @@ export type ShapeOptions = {
   kind: ShapeKind;
   fill: "none" | "primary" | "secondary";
   outline: boolean;
+  width: number;
   sides: number;
 };
 export type TransformSession = {

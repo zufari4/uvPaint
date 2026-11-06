@@ -75,7 +75,11 @@ export function dragTransform(
   const center = midpoint(points[0], points[2]);
   if (hit.action === "move") {
     const snap = (delta: number) => ctrl ? Math.round(delta / 10) * 10 : delta;
-    const dx = snap(p.x - start.x), dy = snap(p.y - start.y);
+    let dx = snap(p.x - start.x), dy = snap(p.y - start.y);
+    if (shift) {
+      if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
+      else dx = 0;
+    }
     return points.map((q) => ({
       x: q.x + dx,
       y: q.y + dy,

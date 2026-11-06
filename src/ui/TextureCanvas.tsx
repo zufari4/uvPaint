@@ -110,7 +110,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     outline: HTMLCanvasElement;
   } | null>(null);
   const visibility = useRef(new TextureVisibility());
-  const outsideCache = useRef<{ source: HTMLCanvasElement; mask: HTMLCanvasElement; outside: HTMLCanvasElement } | null>(null);
+  const outsideCache = useRef<{ source: HTMLCanvasElement; mask: HTMLCanvasElement; revision: number; outside: HTMLCanvasElement } | null>(null);
   const checker = useRef<CanvasPattern | null>(null);
   const screenBuffer = useRef<HTMLCanvasElement | null>(null);
   const guides = useRef<{ key: string; islands: unknown[]; canvas: HTMLCanvasElement } | null>(null);
@@ -304,8 +304,10 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     if (layer?.visible && e.transform) outside = e.transform.outside;
     else if (layer?.visible && layer.uvMask && e.textureIsolated) {
       const cached = outsideCache.current;
-      if (cached?.source !== layer.canvas || cached.mask !== layer.uvMask)
-        outsideCache.current = { source: layer.canvas, mask: layer.uvMask, outside: masked(layer.canvas, layer.uvMask, true) };
+      // An edited shape changes the layer canvas in place, so it is re-masked on every redraw.
+      const revision = e.lineEdit ? e.pixelsRevision : 0;
+      if (cached?.source !== layer.canvas || cached.mask !== layer.uvMask || cached.revision !== revision)
+        outsideCache.current = { source: layer.canvas, mask: layer.uvMask, revision, outside: masked(layer.canvas, layer.uvMask, true) };
       outside = outsideCache.current!.outside;
     }
     // Pixels beyond the island stay faintly visible, except where the user hid faces manually.
@@ -530,7 +532,7 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       gesture.current = g;
       return;
     }
-    if (ev.button === 0 && e.tool !== "move" && !e.transform && e.textureIsolated &&
+    if (ev.button === 0 && e.tool !== "move" && e.tool !== "line" && !e.transform && e.textureIsolated &&
       hitIsland({ ...doc, islands: e.visibleIslands }, p) < 0) e.releaseFocus();
     if (selectionTool && doc.selection && selectionBox && !e.transform && !polygon.current.length) {
       const handle = hitSelectionHandle(selectionBox, p, zoom);

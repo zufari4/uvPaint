@@ -55,7 +55,7 @@ export class Editor {
   brushSize = 32;
   toolOpacity: Partial<Record<Tool, number>> = {};
   toolHardness: Partial<Record<Tool, number>> = {};
-  shape: ShapeOptions = { kind: "line", fill: "none", outline: true, sides: 6 };
+  shape: ShapeOptions = { kind: "line", fill: "none", outline: true, width: 4, sides: 6 };
   tolerance = 24;
   contiguous = true;
   uvDisplay: UVDisplayMode = "outline";
@@ -116,6 +116,7 @@ export class Editor {
       if (["none", "primary", "secondary"].includes(shape.fill)) this.shape.fill = shape.fill;
       if (typeof shape.outline === "boolean") this.shape.outline = shape.outline;
       if (Number.isInteger(shape.sides) && shape.sides >= 3 && shape.sides <= 24) this.shape.sides = shape.sides;
+      if (typeof shape.width === "number" && shape.width >= 1 && shape.width <= 1000) this.shape.width = shape.width;
     } catch { /* defaults */ }
   }
   get brushOpacity() { return this.toolOpacity[this.tool] ?? 1; }

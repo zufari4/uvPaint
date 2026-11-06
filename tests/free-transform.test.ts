@@ -7,6 +7,12 @@ const frame = [
   { x: 10, y: 70 },
 ];
 describe("Free transform gestures", () => {
+  it("Shift locks moving to the dominant axis", () => {
+    const move = { action: "move" as const, handle: -1 };
+    expect(dragTransform(frame, { x: 0, y: 0 }, { x: 30, y: 8 }, move, true, false)[0]).toEqual({ x: 40, y: 20 });
+    expect(dragTransform(frame, { x: 0, y: 0 }, { x: -5, y: 12 }, move, true, false)[0]).toEqual({ x: 10, y: 32 });
+    expect(dragTransform(frame, { x: 0, y: 0 }, { x: 30, y: 8 }, move, false, false)[0]).toEqual({ x: 40, y: 28 });
+  });
   it("orients all resize cursors with rotated and mirrored frame handles", () => {
     const cursors = (points: typeof frame) => Array.from({length:8}, (_,i) => transformResizeCursor(points,i));
     expect(cursors(frame)).toEqual(["nwse-resize","nesw-resize","nwse-resize","nesw-resize","ns-resize","ew-resize","ns-resize","ew-resize"]);
