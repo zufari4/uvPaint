@@ -56,6 +56,18 @@ try {
   assert.ok(rect[2][3]===0&&rect[3][3]===0,'unfilled rectangle stays empty inside and outside');
   assert.equal(await page.evaluate(()=>window.__e.history.undoStack.at(-1)?.label),'Rectangle');
   console.log('PASS Rectangle shape draws an outline between two corners');
+  await page.evaluate(()=>window.__e.addEmpty());
+  await page.mouse.move(...screen(20,20));await page.mouse.down();
+  await page.mouse.move(...screen(60,50),{steps:4});await page.mouse.up();
+  await page.getByLabel('Shape fill').selectOption('primary');
+  await page.getByLabel('Outline width').fill('6');
+  const live=await alpha([[40,35],[23,35]]);
+  assert.ok(live[0][3]>200&&live[1][3]>200,'fill and outline width apply to the shape that is still being edited');
+  assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.brush-footprint')).display),'none','shapes show only the crosshair cursor');
+  await page.keyboard.press('Escape');
+  await page.getByLabel('Shape fill').selectOption('none');
+  await page.getByLabel('Outline width').fill('2');
+  console.log('PASS Shape options update the shape being edited');
   await pickShape('Ellipse');
   await page.evaluate(()=>{window.__e.addEmpty();window.__e.backgroundColor='#0000ff';});
   await page.getByLabel('Shape fill').selectOption('secondary');

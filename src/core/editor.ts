@@ -56,6 +56,7 @@ export class Editor {
   toolOpacity: Partial<Record<Tool, number>> = {};
   toolHardness: Partial<Record<Tool, number>> = {};
   shape: ShapeOptions = { kind: "line", fill: "none", outline: true, width: 4, sides: 6 };
+  private lineStyle = "";
   tolerance = 24;
   contiguous = true;
   uvDisplay: UVDisplayMode = "outline";
@@ -132,7 +133,6 @@ export class Editor {
     this.shape = { ...this.shape, ...patch };
     if (this.shape.fill === "none") this.shape.outline = true;
     this.saveToolOptions();
-    if (this.lineEdit) this.lineEdit.stroke.moveLine(this.lineEdit.a, this.lineEdit.b);
     this.emit();
   }
   setUVDisplay(mode: UVDisplayMode) { this.uvDisplay = mode; this.savePreferences(); }
@@ -250,6 +250,14 @@ export class Editor {
     return this.warpInstance ?? (this.warpInstance = new WarpRenderer());
   }
   emit(pixels = false, interactive = false, region?: Region) {
+    // A shape that is still editable follows color, size, opacity and shape option changes.
+    if (!pixels && this.lineEdit) {
+      const style = JSON.stringify([this.color, this.backgroundColor, this.brushSize, this.brushOpacity, this.shape]);
+      if (style !== this.lineStyle) {
+        this.lineStyle = style;
+        this.lineEdit.stroke.moveLine(this.lineEdit.a, this.lineEdit.b);
+      }
+    }
     if (pixels && this.doc) {
       this.pixelsRevision++;
       this.output = this.compositor.render(this.doc, this.output ?? undefined, region);

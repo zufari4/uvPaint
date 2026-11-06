@@ -11,6 +11,36 @@ import { ViewCube } from "./ViewCube";
 import { IslandPreview } from "../render/island-preview";
 import { islandForFace } from "../tools/uv";
 import { faceKey } from "../tools/uv-guides";
+/** Studio floor: a soft checker grid that fades out so the floor has no visible edge. */
+function floorTexture(renderer: THREE.WebGLRenderer) {
+  const size = 1024, tiles = 20, step = size / tiles;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d")!;
+  for (let y = 0; y < tiles; y++)
+    for (let x = 0; x < tiles; x++) {
+      ctx.fillStyle = (x + y) % 2 ? "#3b4047" : "#43484f";
+      ctx.fillRect(x * step, y * step, step, step);
+    }
+  ctx.strokeStyle = "#5a626b";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i <= tiles; i += 2) {
+    ctx.moveTo(i * step, 0); ctx.lineTo(i * step, size);
+    ctx.moveTo(0, i * step); ctx.lineTo(size, i * step);
+  }
+  ctx.stroke();
+  const fade = ctx.createRadialGradient(size / 2, size / 2, size * 0.12, size / 2, size / 2, size / 2);
+  fade.addColorStop(0, "#000");
+  fade.addColorStop(1, "#0000");
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.fillStyle = fade;
+  ctx.fillRect(0, 0, size, size);
+  const texture = new THREE.CanvasTexture(c);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return texture;
+}
 export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onToggleExpand: () => void }) {
   const [navigationState,setNavigationState]=useState<ViewportNavigation|null>(null);
   const savedView = useRef<{ scene: string; camera: ReturnType<ViewportNavigation["snapshot"]> } | null>(null);
@@ -80,7 +110,7 @@ export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onTo
     light.shadow.normalBias = radius * 0.002;
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(radius * 5, radius * 5),
-      new THREE.ShadowMaterial({ opacity: 0.25 }),
+      new THREE.MeshStandardMaterial({ map: floorTexture(renderer), transparent: true, roughness: 0.95, metalness: 0, depthWrite: false }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(center.x, box.min.y - radius * 0.003, center.z);
@@ -211,6 +241,7 @@ export function Viewport({ expanded, onToggleExpand }: { expanded: boolean; onTo
       renderer.domElement.removeEventListener("pointercancel",cancelClick);
       islands.dispose();
       ground.geometry.dispose();
+      ground.material.map?.dispose();
       ground.material.dispose();
       environment.dispose();
       light.shadow.dispose();

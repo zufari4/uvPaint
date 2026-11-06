@@ -86,8 +86,9 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
       if (source) marker.style.transform = `translate(${source.x}px, ${source.y}px)`;
     }
     if (!ring) return;
+    // Line and shape points use a crosshair; the ring only appears while F resizes.
     const visible = !!doc && !!p && sizeTools.includes(e.tool) && (!!resize ||
-      (!space && !e.pickingLayerIsland && !e.imageImport && !e.islandMenu && gesture.current?.kind !== "pan"));
+      (e.tool !== "line" && !space && !e.pickingLayerIsland && !e.imageImport && !e.islandMenu && gesture.current?.kind !== "pan"));
     ring.style.display = visible ? "block" : "none";
     if (resize) ring.dataset.size = `${e.brushSize} px`;
     else delete ring.dataset.size;
