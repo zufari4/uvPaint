@@ -9,6 +9,8 @@ const projectFiles = new Map<string, string>();
 const projectPage = "https://github.com/zufari4/uvPaint";
 // Keep settings and recent projects saved by releases named "UV Paint".
 if (!app.commandLine.hasSwitch("user-data-dir")) app.setPath("userData", join(app.getPath("appData"), "UV Paint"));
+// Laptops with two GPUs otherwise render large textures on the slower integrated one.
+app.commandLine.appendSwitch("force_high_performance_gpu");
 app.whenReady().then(async () => {
   const recentProjects = new RecentProjects(join(app.getPath("userData"), "recent-projects.json"));
   await recentProjects.load();

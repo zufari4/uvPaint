@@ -47,6 +47,8 @@ try {
     const defaults = e.doc.restrict && e.doc.selectedIslands.length === 0;
     e.addEmpty();
     e.tool = "brush";
+    // The brush keeps the 50% set by the Digit5 shortcut earlier; this check needs full coverage.
+    e.brushOpacity = 1;
     e.color = "#ff0000";
     e.brushSize = 24;
     const stroke = new PaintStroke(e, { x: 0, y: 64 });

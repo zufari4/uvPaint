@@ -104,6 +104,9 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
   } | null>(null);
   const visibility = useRef(new TextureVisibility());
   const outsideCache = useRef<{ source: HTMLCanvasElement; mask: HTMLCanvasElement; outside: HTMLCanvasElement } | null>(null);
+  const checker = useRef<CanvasPattern | null>(null);
+  const screenBuffer = useRef<HTMLCanvasElement | null>(null);
+  const guides = useRef<{ key: string; islands: unknown[]; canvas: HTMLCanvasElement } | null>(null);
   const fit = () => {
     if (doc) {
       setZoom(
@@ -255,15 +258,20 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     ctx.scale(zoom, zoom);
     const w = doc.width,
       h = doc.height;
-    // Checkerboard is presentation only; it is never part of the document buffer.
-    const tile = 16 / zoom;
-    ctx.fillStyle = "#36393d";
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = "#414448";
-    for (let y = 0; y < h; y += tile)
-      for (let x = 0; x < w; x += tile)
-        if ((Math.round(x / tile) + Math.round(y / tile)) % 2 === 0)
-          ctx.fillRect(x, y, Math.min(tile, w - x), Math.min(tile, h - y));
+    // Checkerboard is presentation only; a screen-space pattern keeps it cheap at any zoom.
+    if (!checker.current) {
+      const tile = document.createElement("canvas");
+      tile.width = tile.height = 32;
+      const t = tile.getContext("2d")!;
+      t.fillStyle = "#36393d"; t.fillRect(0, 0, 32, 32);
+      t.fillStyle = "#414448"; t.fillRect(0, 0, 16, 16); t.fillRect(16, 16, 16, 16);
+      checker.current = ctx.createPattern(tile, "repeat");
+    }
+    ctx.save();
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.fillStyle = checker.current!;
+    ctx.fillRect(origin.x, origin.y, w * zoom, h * zoom);
+    ctx.restore();
     visibility.current.update(doc, e.textureHiddenFaces, e.visibleIslands, e.textureIsolated);
     const layer = e.layer;
     let outside: HTMLCanvasElement | undefined;
@@ -276,11 +284,25 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     }
     // Pixels beyond the island stay faintly visible, except where the user hid faces manually.
     const faint = !e.hiddenFaces.size, outsideAlpha = 0.4 * (layer?.opacity ?? 0);
-    const visibleTexture = visibility.current.render(e.output, faint ? undefined : outside, outsideAlpha);
+    const masking = visibility.current.active;
     // Magnified texels stay crisp so pixel-level edits (e.g. pixelation) are visible.
     ctx.imageSmoothingEnabled = zoom < 1;
-    if (visibleTexture ?? e.output) ctx.drawImage((visibleTexture ?? e.output)!, 0, 0);
-    if (outside && (faint || !visibleTexture)) {
+    if (masking && e.output) {
+      // Masking in screen space costs per window pixel instead of per texture pixel.
+      let buffer = screenBuffer.current;
+      if (!buffer || buffer.width !== width || buffer.height !== height) buffer = screenBuffer.current = canvas(width, height, false);
+      const s = context(buffer);
+      s.setTransform(1, 0, 0, 1, 0, 0);
+      s.clearRect(0, 0, width, height);
+      s.setTransform(ratio * zoom, 0, 0, ratio * zoom, ratio * origin.x, ratio * origin.y);
+      s.imageSmoothingEnabled = zoom < 1;
+      visibility.current.renderTo(s, e.output, faint ? undefined : outside, outsideAlpha);
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(buffer, 0, 0);
+      ctx.restore();
+    } else if (e.output) ctx.drawImage(e.output, 0, 0);
+    if (outside && (faint || !masking)) {
       ctx.save();
       ctx.globalAlpha = outsideAlpha;
       ctx.drawImage(outside, 0, 0);
@@ -292,24 +314,43 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     ctx.rect(0, 0, w, h);
     ctx.clip();
     if (e.uvDisplay !== "off" || doc.selectedIslands.length || e.pickingLayerIsland) {
-      ctx.globalAlpha = e.uvOpacity;
-      ctx.strokeStyle = e.uvColor;
-      ctx.lineWidth = 0.8 / zoom;
-      traceGuides(ctx, e.visibleIslands, e.pickingLayerIsland && e.uvDisplay === "off" ? "outline" : e.uvDisplay, w, h);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-      const selected = e.visibleIslands.filter((i) =>
-        doc.selectedIslands.includes(i.id),
-      );
-      if (selected.length) {
-        traceIslands(ctx, selected, w, h);
-        ctx.fillStyle = "#7adbc32a";
-        ctx.fill();
-        traceGuides(ctx, selected, "outline", w, h);
-        ctx.strokeStyle = "#b4ffe9";
-        ctx.lineWidth = 1.8 / zoom;
-        ctx.stroke();
+      // UV guides only change with the view or islands, so they are drawn once into a screen-sized overlay.
+      const islands = e.visibleIslands;
+      const key = [e.uvDisplay, e.pickingLayerIsland, zoom, origin.x, origin.y, width, height, ratio, e.uvColor, e.uvOpacity, doc.selectedIslands.join(","), w, h].join("|");
+      let overlay = guides.current;
+      if (!overlay || overlay.islands !== islands || overlay.key !== key) {
+        const target = overlay && overlay.canvas.width === width && overlay.canvas.height === height ? overlay.canvas : canvas(width, height, false);
+        const g = context(target);
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.clearRect(0, 0, width, height);
+        g.save();
+        g.setTransform(ratio * zoom, 0, 0, ratio * zoom, ratio * origin.x, ratio * origin.y);
+        g.beginPath();
+        g.rect(0, 0, w, h);
+        g.clip();
+        g.globalAlpha = e.uvOpacity;
+        g.strokeStyle = e.uvColor;
+        g.lineWidth = 0.8 / zoom;
+        traceGuides(g, islands, e.pickingLayerIsland && e.uvDisplay === "off" ? "outline" : e.uvDisplay, w, h);
+        g.stroke();
+        g.globalAlpha = 1;
+        const selected = islands.filter((i) => doc.selectedIslands.includes(i.id));
+        if (selected.length) {
+          traceIslands(g, selected, w, h);
+          g.fillStyle = "#7adbc32a";
+          g.fill();
+          traceGuides(g, selected, "outline", w, h);
+          g.strokeStyle = "#b4ffe9";
+          g.lineWidth = 1.8 / zoom;
+          g.stroke();
+        }
+        g.restore();
+        overlay = guides.current = { key, islands, canvas: target };
       }
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(overlay.canvas, 0, 0);
+      ctx.restore();
     }
     if (doc.selection) {
       if (selectionCache.current?.source !== doc.selection) {
@@ -634,7 +675,8 @@ export function TextureCanvas({ expanded, onToggleExpand }: { expanded: boolean;
     if (g.kind === "move-pending") {
       if (Math.hypot(p.x - g.start.x, p.y - g.start.y) * zoom < 4) return;
       e.beginTransform("free");
-      if (!e.transform) return;
+      // An empty layer cannot be transformed; retrying would rescan the whole texture on every move.
+      if (!e.transform) { gesture.current = null; return; }
       g.kind = "transform";
       g.original = e.transform.points.map(p => ({ ...p }));
       g.transformHit = hitTransform(g.original, g.start, zoom, true, ev.ctrlKey || ev.metaKey);

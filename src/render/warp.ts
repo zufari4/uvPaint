@@ -85,15 +85,33 @@ export class WarpRenderer {
     w: number,
     h: number,
     target?: HTMLCanvasElement,
+    region?: { x: number; y: number; width: number; height: number },
   ) {
     if (w !== this.checkedWidth || h !== this.checkedHeight) this.check(w, h);
     if (kind === "perspective" && !validQuad(points))
       throw new Error("Keep the four corners in a convex, non-crossing order.");
-    const out = target && target.width === w && target.height === h
-      ? target : canvas(w, h, false);
+    const reuse = !!target && target.width === w && target.height === h;
+    const out = reuse ? target! : canvas(w, h, false);
     const ctx = context(out);
+    ctx.save();
+    // The previous image lies inside the region, so clearing only the region keeps the target exact.
+    if (reuse && region) { ctx.beginPath(); ctx.rect(region.x, region.y, region.width, region.height); ctx.clip(); }
     ctx.clearRect(0, 0, w, h);
-
+    try {
+      return this.draw(ctx, out, source, points, kind, w, h);
+    } finally {
+      ctx.restore();
+    }
+  }
+  private draw(
+    ctx: CanvasRenderingContext2D,
+    out: HTMLCanvasElement,
+    source: HTMLCanvasElement,
+    points: Point[],
+    kind: "perspective" | "mesh",
+    w: number,
+    h: number,
+  ) {
     // Moving, rotating and scaling a parallelogram needs no projective shader
     // or GPU-to-CPU copy. Canvas handles premultiplied filtering directly.
     if (kind === "perspective" &&

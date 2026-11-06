@@ -174,7 +174,7 @@ export class PaintStroke {
     draw(x, this.clipped);
     x.globalAlpha = 1;
     x.globalCompositeOperation = "source-over";
-    e.emit(true, interactive);
+    e.emit(true, interactive, { x: left, y: top, width: w, height: h });
   }
   finish() {
     if (this.ended) return;

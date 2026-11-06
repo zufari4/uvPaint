@@ -58,23 +58,36 @@ export function masked(
   return c;
 }
 export function alphaBounds(c: HTMLCanvasElement) {
-  const { width: w, height: h } = c;
-  const d = context(c).getImageData(0, 0, w, h).data;
-  let x0 = w,
-    y0 = h,
-    x1 = -1,
-    y1 = -1;
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++)
-      if (d[(y * w + x) * 4 + 3]) {
-        x0 = Math.min(x0, x);
-        x1 = Math.max(x1, x);
-        y0 = Math.min(y0, y);
-        y1 = Math.max(y1, y);
-      }
-  return x1 < 0
-    ? null
-    : { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 };
+  const { width: w, height: h } = c, ctx = context(c), strip = 64;
+  // Reads strips inward from each edge and stops at the first content, instead of the whole image.
+  const area = (x: number, y: number, width: number, height: number) => ctx.getImageData(x, y, width, height).data;
+  let y0 = -1;
+  for (let y = 0; y < h && y0 < 0; y += strip) {
+    const d = area(0, y, w, Math.min(strip, h - y));
+    for (let i = 3; i < d.length; i += 4) if (d[i]) { y0 = y + Math.floor((i >> 2) / w); break; }
+  }
+  if (y0 < 0) return null;
+  let y1 = y0;
+  for (let y = h; y > y0; y -= strip) {
+    const top = Math.max(y0, y - strip), d = area(0, top, w, y - top);
+    let found = -1;
+    for (let i = d.length - 1; i > 0; i -= 4) if (d[i]) { found = top + Math.floor((i >> 2) / w); break; }
+    if (found >= 0) { y1 = found; break; }
+  }
+  const height = y1 - y0 + 1;
+  let x0 = -1;
+  for (let x = 0; x < w && x0 < 0; x += strip) {
+    const n = Math.min(strip, w - x), d = area(x, y0, n, height);
+    for (let i = 3; i < d.length; i += 4) if (d[i]) { const col = x + ((i >> 2) % n); if (x0 < 0 || col < x0) x0 = col; }
+  }
+  let x1 = x0;
+  for (let x = w; x > x0; x -= strip) {
+    const left = Math.max(x0, x - strip), n = x - left, d = area(left, y0, n, height);
+    let found = -1;
+    for (let i = 3; i < d.length; i += 4) if (d[i]) found = Math.max(found, left + ((i >> 2) % n));
+    if (found >= 0) { x1 = found; break; }
+  }
+  return { x: x0, y: y0, width: x1 - x0 + 1, height };
 }
 export function toPNG(c: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) =>

@@ -13,7 +13,11 @@ const app = await electron.launch({ args: ['.', `--user-data-dir=${profile}`], e
 const shot = (page, name) => page.screenshot({ path: path.join(out, name) });
 try {
   const page = await app.firstWindow(); await page.waitForSelector('.empty-canvas');
-  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.unmaximize(); w.setContentSize(1600, 940); w.center(); });
+  await app.evaluate(({ BrowserWindow, screen }) => {
+    // Never larger than the work area, or part of the window ends up off screen.
+    const area = screen.getPrimaryDisplay().workAreaSize, w = BrowserWindow.getAllWindows()[0];
+    w.unmaximize(); w.setContentSize(Math.min(1600, area.width - 40), Math.min(940, area.height - 40)); w.center();
+  });
   await page.evaluate(() => localStorage.setItem('uvpaint.layersDock', 'bottom-right'));
   await page.reload(); await page.waitForSelector('.empty-canvas');
   await page.waitForTimeout(500);

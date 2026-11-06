@@ -11,7 +11,7 @@ import type {
 } from "../types";
 import { canvas, context, cloneCanvas, masked, alphaBounds } from "./canvas";
 import { History, snapshot } from "./history";
-import { composite, LayerCompositor } from "../render/composite";
+import { composite, LayerCompositor, type Region } from "../render/composite";
 import { WarpRenderer } from "../render/warp";
 import { editingMask, extractIslands, islandMask, hitIsland } from "../tools/uv";
 import {
@@ -232,10 +232,10 @@ export class Editor {
   get warp() {
     return this.warpInstance ?? (this.warpInstance = new WarpRenderer());
   }
-  emit(pixels = false, interactive = false) {
+  emit(pixels = false, interactive = false, region?: Region) {
     if (pixels && this.doc) {
       this.pixelsRevision++;
-      this.output = this.compositor.render(this.doc, this.output ?? undefined);
+      this.output = this.compositor.render(this.doc, this.output ?? undefined, region);
       const slot = this.model?.slots.find((s) => s.id === this.activeId);
       if (slot) {
         let preview = this.output;
@@ -1218,6 +1218,14 @@ export class Editor {
       d = this.doc;
     if (!t || !d) return;
     try {
+      // After the first frame only the area under the previous and the new frame changes.
+      let region: Region | undefined;
+      if (t.raster && t.warped) {
+        const all = [...t.points, ...points], xs = all.map((p) => p.x), ys = all.map((p) => p.y);
+        const x0 = Math.max(0, Math.floor(Math.min(...xs)) - 2), y0 = Math.max(0, Math.floor(Math.min(...ys)) - 2);
+        const x1 = Math.min(d.width, Math.ceil(Math.max(...xs)) + 2), y1 = Math.min(d.height, Math.ceil(Math.max(...ys)) + 2);
+        region = { x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
+      }
       const warped = this.warp.render(
         t.source,
         points,
@@ -1225,16 +1233,29 @@ export class Editor {
         d.width,
         d.height,
         t.warped,
+        region,
       );
       t.warped = warped;
       const c = t.raster ?? (t.raster = canvas(d.width, d.height, false));
       const ctx = context(c);
+      ctx.save();
+      if (region) { ctx.beginPath(); ctx.rect(region.x, region.y, region.width, region.height); ctx.clip(); }
       ctx.clearRect(0, 0, d.width, d.height);
       ctx.drawImage(t.rest, 0, 0);
       ctx.drawImage(warped, 0, 0);
-      t.outside = t.clip
-        ? masked(warped, t.clip, true, t.outside ?? canvas(d.width, d.height, false))
-        : undefined;
+      ctx.restore();
+      if (t.clip) {
+        const o = t.outside && t.outside.width === d.width && t.outside.height === d.height ? t.outside : canvas(d.width, d.height, false);
+        const oc = context(o);
+        oc.save();
+        if (region && o === t.outside) { oc.beginPath(); oc.rect(region.x, region.y, region.width, region.height); oc.clip(); }
+        oc.clearRect(0, 0, d.width, d.height);
+        oc.drawImage(warped, 0, 0);
+        oc.globalCompositeOperation = "destination-out";
+        oc.drawImage(t.clip, 0, 0);
+        oc.restore();
+        t.outside = o;
+      } else t.outside = undefined;
       const next = snapshot(d);
       const layer = next.layers.find((l) => l.id === t.layerId)!;
       layer.canvas = c;
@@ -1247,7 +1268,7 @@ export class Editor {
       };
       this.docs.set(this.activeId, next);
       t.points = points;
-      this.emit(true, interactive);
+      this.emit(true, interactive, region);
     } catch (e) {
       this.message = e instanceof Error ? e.message : String(e);
       this.emit();

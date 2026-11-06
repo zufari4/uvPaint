@@ -127,6 +127,8 @@ try {
     const ctx = e.layer.canvas.getContext('2d'); ctx.fillStyle = '#00ff00'; ctx.fillRect(0, 0, 512, 128);
     ctx.fillStyle = '#0000ff'; ctx.fillRect(128, 0, 256, 128); e.emit(true);
   });
+  // Thumbnails of in-place edits redraw shortly after the edit pauses.
+  await page.waitForTimeout(400);
   check(await page.locator('.layer-row.selected .layer-thumb').evaluate(c => {
     const ctx = c.getContext('2d'), pixel=(x,y)=>ctx.getImageData(x,y,1,1).data;
     return pixel(0,18)[1]===255 && pixel(43,18)[1]===255 && pixel(22,18)[2]===255 && pixel(22,5)[3]===0 && pixel(22,30)[3]===0;
@@ -140,11 +142,11 @@ try {
       [{x:x/512,y:10/128},{x:(x+44)/512,y:46/128},{x:x/512,y:46/128}]
     ]}));e.setLayerIsland(0);e.emit(true);window.thumbnailSource=e.layer.canvas.toDataURL();
   });
-  const thumbColor = channel => page.locator('.layer-row.selected .layer-thumb').evaluate((c,channel) => {
+  const thumbColor = async channel => { await page.waitForTimeout(400); return page.locator('.layer-row.selected .layer-thumb').evaluate((c,channel) => {
     const ctx=c.getContext('2d');return [[1,1],[42,1],[1,34],[42,34],[22,18]].every(([x,y])=>{
       const p=ctx.getImageData(x,y,1,1).data;return p[channel]===255&&p[3]===255;
     });
-  },channel);
+  },channel); };
   check(await thumbColor(0),'Small off-center bound island fills the entire layer thumbnail');
   await page.evaluate(()=>e.setLayerIsland(1));
   check(await thumbColor(1),'Rebinding refreshes the thumbnail without changing source pixels');

@@ -27,12 +27,12 @@ export class TextureVisibility {
     // of removed faces leaks texture padding and transformed pixels into UV
     // gaps. The visible union also preserves shared pixels of overlapping UVs.
     traceIslands(ctx, visible, doc.width, doc.height);ctx.fill();
-    if (!this.buffer || this.buffer.width !== doc.width || this.buffer.height !== doc.height)
-      this.buffer = canvas(doc.width, doc.height, false);
     this.rebuilds++;
   }
   render(source: HTMLCanvasElement | null, outside?: HTMLCanvasElement, opacity = 0): HTMLCanvasElement | null {
-    if (!this.mask || !this.buffer) return null;
+    if (!this.mask) return null;
+    if (!this.buffer || this.buffer.width !== this.width || this.buffer.height !== this.height)
+      this.buffer = canvas(this.width, this.height, false);
     const ctx = context(this.buffer);
     ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
     ctx.clearRect(0, 0, this.width, this.height);
@@ -41,5 +41,16 @@ export class TextureVisibility {
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = "destination-in";
     ctx.drawImage(this.mask, 0, 0); ctx.globalCompositeOperation = "source-over";
     return this.buffer;
+  }
+  get active() { return !!this.mask; }
+  /** Same as render(), but draws into a caller's (screen-sized) context using its current transform. */
+  renderTo(ctx: CanvasRenderingContext2D, source: HTMLCanvasElement | null, outside?: HTMLCanvasElement, opacity = 0) {
+    if (!this.mask) return false;
+    if (source) ctx.drawImage(source, 0, 0);
+    if (outside && opacity) { ctx.globalAlpha = opacity; ctx.drawImage(outside, 0, 0); ctx.globalAlpha = 1; }
+    ctx.globalCompositeOperation = "destination-in";
+    ctx.drawImage(this.mask, 0, 0);
+    ctx.globalCompositeOperation = "source-over";
+    return true;
   }
 }
