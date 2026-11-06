@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/zufari4/uvPaint/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/release-v1.0.0-6bd9c0" alt="Release v1.0.0" /></a>
+  <a href="https://www.npmjs.com/package/uvpaint"><img src="https://img.shields.io/npm/v/uvpaint?color=cb3837" alt="npm package" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%20x64-4a535e" alt="Windows x64" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f2c230" alt="MIT license" /></a>
 </p>
@@ -56,6 +57,15 @@ Sliders update the 2D texture and the 3D model while you drag them; the whole im
 
 No account, Blender or internet connection is required. To build it yourself, see [Building from source](#️-building-from-source); the result is `release/current/win-unpacked/uvPaint.exe` (keep the whole folder together).
 
+### 📦 Or install with npm
+
+```powershell
+npm install -g uvpaint
+uvpaint
+```
+
+Requires Node.js 18+; npm downloads the Electron runtime during installation. Update with `npm update -g uvpaint`, remove with `npm uninstall -g uvpaint`.
+
 ## ⌨️ Shortcuts
 
 | Action | Keys |
@@ -94,6 +104,8 @@ npm ci
 npm run dev        # Vite + Electron with hot reload
 npm run build      # type-check and compile
 npm run dist       # build release/current/win-unpacked/uvPaint.exe
+npm run pack:npm   # stage the npm package in dist-npm/
+npm run dist:installer  # build release/current/uvPaint-Setup-1.0.0.exe
 npm test           # unit tests
 ```
 

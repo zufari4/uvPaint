@@ -35,7 +35,8 @@
     "test:docking-import": "node scripts/regression-docking-import.mjs",
     "test:packaged": "node scripts/packaged-smoke.mjs",
     "dist": "npm run build && electron-builder --win --x64 --dir",
-    "dist:installer": "npm run build && electron-builder --win nsis --x64"
+    "dist:installer": "npm run build && electron-builder --win nsis --x64",
+    "pack:npm": "npm run build && node scripts/pack-npm.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.577.0",
